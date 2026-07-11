@@ -1,0 +1,22 @@
+{
+  "short_name": "StreamFlow",
+  "name": "StreamFlow Media Player",
+  "description": "Un lecteur de média élégant et léger pour Alldebrid, inspiré par Infuse.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#06080F",
+  "theme_color": "#06080F",
+  "icons": [
+    {
+      "src": "https://ai.google.dev/static/site-assets/images/share-ais-513315318.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "https://ai.google.dev/static/site-assets/images/share-ais-513315318.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ]
+}
