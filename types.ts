@@ -55,4 +55,5 @@ export interface MagnetOverride {
     type?: 'movie' | 'tv';
     tmdbId?: number;
     customTmdbData?: TMDBResult;
+    kidsFriendlyOverride?: boolean;
 }

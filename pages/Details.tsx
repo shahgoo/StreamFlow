@@ -41,6 +41,31 @@ export const Details: React.FC = () => {
     const [selectedTmdb, setSelectedTmdb] = useState<TMDBResult | null>(null);
     const [isSearching, setIsSearching] = useState(false);
 
+    // Contrôle Parental
+    const [kidsOverride, setKidsOverride] = useState<boolean | undefined>(undefined);
+    const kidsMode = useMemo(() => localStorage.getItem('kids_mode') === 'true', []);
+
+    useEffect(() => {
+        if (magnet) {
+            const override = StorageUtils.getOverride(magnet.id);
+            setKidsOverride(override?.kidsFriendlyOverride);
+        }
+    }, [magnet?.id]);
+
+    const handleKidsOverrideChange = (option: string) => {
+        if (!magnet) return;
+        let value: boolean | undefined = undefined;
+        if (option === 'allow') value = true;
+        if (option === 'block') value = false;
+        
+        setKidsOverride(value);
+        
+        StorageUtils.saveOverride({
+            id: magnet.id,
+            kidsFriendlyOverride: value
+        });
+    };
+
     // Initial search queries
     useEffect(() => {
         if (magnet) {
@@ -593,7 +618,7 @@ export const Details: React.FC = () => {
                          {details?.videos?.results && details.videos.results.length > 0 && (
                              <a 
                                  href={`https://www.youtube.com/watch?v=${details.videos.results[0].key}`}
-                                 target="_blank"
+                                  target="_blank"
                                  rel="noopener noreferrer"
                                  className="btn-glass w-full flex items-center justify-center font-bold text-xs py-2.5 mt-4"
                              >
@@ -602,6 +627,51 @@ export const Details: React.FC = () => {
                              </a>
                          )}
                      </div>
+
+                     {/* CONTRÔLE PARENTAL : MODE ENFANTS OVERRIDE */}
+                     {!kidsMode && (
+                         <div className="bg-brand-800/40 border border-white/5 p-6 rounded-3xl space-y-4">
+                             <h3 className="text-sm font-bold text-text-muted uppercase tracking-wider border-b border-white/5 pb-2 flex items-center">
+                                 <span className="mr-1.5">🧸</span> Autorisation Enfant
+                             </h3>
+                             
+                             <p className="text-[10px] text-gray-400 leading-relaxed">
+                                 Décidez manuellement si ce contenu doit figurer ou non dans la bibliothèque de vos enfants en Mode Enfants.
+                             </p>
+                             
+                             <div className="grid grid-cols-3 gap-1 bg-brand-900/60 p-1 rounded-xl">
+                                 {[
+                                     { id: 'default', label: 'Auto' },
+                                     { id: 'allow', label: 'Autoriser' },
+                                     { id: 'block', label: 'Masquer' }
+                                 ].map(opt => {
+                                     const isActive = opt.id === 'default' 
+                                         ? kidsOverride === undefined 
+                                         : opt.id === 'allow' 
+                                             ? kidsOverride === true 
+                                             : kidsOverride === false;
+                                             
+                                     return (
+                                         <button
+                                             key={opt.id}
+                                             onClick={() => handleKidsOverrideChange(opt.id)}
+                                             className={`py-2 text-[10px] font-extrabold rounded-lg transition-all ${
+                                                 isActive 
+                                                     ? opt.id === 'allow' 
+                                                         ? 'bg-green-600 text-white shadow-sm'
+                                                         : opt.id === 'block'
+                                                             ? 'bg-red-600 text-white shadow-sm'
+                                                             : 'bg-white text-black shadow-sm'
+                                                     : 'text-gray-400 hover:text-white'
+                                             }`}
+                                         >
+                                             {opt.label}
+                                         </button>
+                                     );
+                                 })}
+                             </div>
+                         </div>
+                     )}
 
                      {/* Casting (Acteurs) */}
                      {details?.credits?.cast && details.credits.cast.length > 0 && (

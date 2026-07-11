@@ -206,6 +206,16 @@ export const Library: React.FC = () => {
 
     // Validation du contenu jeunesse
     const isKidFriendly = (item: EnrichedMagnet | WatchProgress) => {
+        // Vérifier s'il y a une surcharge manuelle parentale d'abord
+        const overrides = StorageUtils.getOverrides();
+        const magnetId = (item as EnrichedMagnet).id || (item as WatchProgress).magnetId;
+        const itemOverride = overrides[magnetId];
+
+        if (itemOverride && itemOverride.kidsFriendlyOverride !== undefined) {
+            return itemOverride.kidsFriendlyOverride;
+        }
+
+        // Sinon, appliquer les filtres automatiques par défaut
         if (item.tmdbData) {
             const genreIds = item.tmdbData.genre_ids || (item.tmdbData.genres ? item.tmdbData.genres.map(g => g.id) : []);
             const kidGenres = [16, 10751, 10762]; // Animation (16), Famille (10751), Kids (10762)
