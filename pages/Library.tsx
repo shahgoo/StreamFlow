@@ -22,7 +22,7 @@ export interface EnrichedMagnet extends Magnet {
 }
 
 export const Library: React.FC = () => {
-    const { adApiKey, tmdbApiKey, firebaseUser, contextPin } = useApp();
+    const { adApiKey, tmdbApiKey, firebaseUser, savedPin } = useApp();
     const [magnets, setMagnets] = useState<EnrichedMagnet[]>([]);
     const [continueWatching, setContinueWatching] = useState<WatchProgress[]>([]);
     const [loading, setLoading] = useState(true);
@@ -229,7 +229,7 @@ export const Library: React.FC = () => {
     const handleToggleKidsMode = () => {
         if (kidsMode) {
             // Désactiver le mode enfants exige le PIN si configuré
-            if (contextPin) {
+            if (savedPin) {
                 setPinInput('');
                 setPinError(false);
                 setIsPinModalOpen(true);
@@ -248,7 +248,7 @@ export const Library: React.FC = () => {
 
     const handlePinSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (pinInput === contextPin) {
+        if (pinInput === savedPin) {
             setKidsMode(false);
             localStorage.setItem('kids_mode', 'false');
             setActiveCategory('all');
@@ -375,7 +375,7 @@ export const Library: React.FC = () => {
             </div>
 
             {/* BANDEAU D'AVERTISSEMENT MODE ENFANTS SANS CODE PIN */}
-            {kidsMode && !contextPin && (
+            {kidsMode && !savedPin && (
                 <div className="bg-amber-500/10 border border-amber-500/30 text-amber-300 px-4 py-3 rounded-2xl mb-6 text-xs flex items-center justify-between animate-fade-in shadow-lg">
                     <div className="flex items-center">
                         <Icons.AlertCircle className="mr-2 flex-shrink-0" size={16} />
