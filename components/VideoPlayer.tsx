@@ -34,6 +34,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     const [hasError, setHasError] = useState(false);
     const [playbackRate, setPlaybackRate] = useState(1);
     const [isFullscreen, setIsFullscreen] = useState(false);
+    const [copied, setCopied] = useState(false);
 
     // Auto-hide controls timer
     const controlsTimeoutRef = useRef<number | null>(null);
@@ -276,6 +277,28 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         window.location.href = `vlc://${streamUrl.trim()}`;
     };
 
+    const copyToClipboard = () => {
+        try {
+            navigator.clipboard.writeText(streamUrl);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch (err) {
+            // Fallback pour les contextes non sécurisés (HTTP) où navigator.clipboard n'est pas dispo
+            const textArea = document.createElement("textarea");
+            textArea.value = streamUrl;
+            document.body.appendChild(textArea);
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+            } catch (e) {
+                console.error("Impossible de copier", e);
+            }
+            document.body.removeChild(textArea);
+        }
+    };
+
     return (
         <div 
             ref={containerRef}
@@ -321,6 +344,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                                 className="w-full py-3 bg-white/5 hover:bg-white/10 text-gray-300 rounded-xl text-sm font-semibold transition-all"
                             >
                                 Utiliser le lien universel VLC (vlc://)
+                            </button>
+                            <button 
+                                onClick={copyToClipboard}
+                                className={`w-full py-3 rounded-xl text-sm font-semibold transition-all ${
+                                    copied ? 'bg-green-600 text-white' : 'bg-white/5 hover:bg-white/10 text-gray-300'
+                                }`}
+                            >
+                                {copied ? 'Lien copié !' : 'Copier le lien direct de streaming'}
                             </button>
                             <button 
                                 onClick={onClose}
