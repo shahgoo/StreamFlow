@@ -1,6 +1,6 @@
 import { ADResponse, MagnetsResponse, UnlockResponse } from '../types';
 
-const BASE_URL = 'https://api.alldebrid.com/v4';
+const BASE_URL = 'https://api.alldebrid.com/v4.1';
 const AGENT = 'StreamFlowApp';
 
 export const AlldebridService = {
