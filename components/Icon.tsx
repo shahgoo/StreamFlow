@@ -1,0 +1,46 @@
+import React from 'react';
+import { 
+  Film, 
+  Settings, 
+  Play, 
+  Download, 
+  Search, 
+  Grid, 
+  List, 
+  Trash2, 
+  RefreshCw,
+  AlertCircle,
+  ExternalLink,
+  ChevronLeft,
+  CheckCircle,
+  XCircle,
+  Key,
+  Share2,
+  Lock,
+  Unlock,
+  Copy,
+  Check
+} from 'lucide-react';
+
+export const Icons = {
+  Film,
+  Settings,
+  Play,
+  Download,
+  Search,
+  Grid,
+  List,
+  Trash2,
+  RefreshCw,
+  AlertCircle,
+  ExternalLink,
+  ChevronLeft,
+  CheckCircle,
+  XCircle,
+  Key,
+  Share2,
+  Lock,
+  Unlock,
+  Copy,
+  Check
+};

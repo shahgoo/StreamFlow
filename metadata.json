@@ -1,0 +1,6 @@
+{
+  "name": "StreamFlow",
+  "description": "Un lecteur de média élégant et léger pour Alldebrid, inspiré par Infuse.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
