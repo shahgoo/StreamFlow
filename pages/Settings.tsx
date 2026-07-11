@@ -2,19 +2,32 @@ import React, { useState, useEffect } from 'react';
 import { Icons } from '../components/Icon';
 import { AlldebridService } from '../services/alldebrid';
 import { TMDBService } from '../services/tmdb';
+import { useApp } from '../contexts/AppContext';
 
 type ApiStatus = 'idle' | 'checking' | 'valid' | 'invalid';
 
 export const Settings: React.FC = () => {
+    const {
+        adApiKey,
+        tmdbApiKey,
+        savedPin: contextPin,
+        isLocked: contextLocked,
+        setAdApiKey,
+        setTmdbApiKey,
+        setSavedPin,
+        logoutAlldebrid,
+        logoutTmdb
+    } = useApp();
+
     // Auth State
-    const [isLocked, setIsLocked] = useState(false);
+    const [isLocked, setIsLocked] = useState(contextLocked);
     const [pinInput, setPinInput] = useState('');
     const [authError, setAuthError] = useState(false);
 
     // Settings State
-    const [apiKey, setApiKey] = useState('');
-    const [tmdbKey, setTmdbKey] = useState('');
-    const [savedPin, setSavedPin] = useState('');
+    const [apiKey, setApiKey] = useState(adApiKey);
+    const [tmdbKey, setTmdbKey] = useState(tmdbApiKey);
+    const [savedPin, setSavedPinState] = useState(contextPin);
     
     // UI State
     const [adStatus, setAdStatus] = useState<ApiStatus>('idle');
@@ -26,24 +39,34 @@ export const Settings: React.FC = () => {
     const [newPin, setNewPin] = useState('');
 
     useEffect(() => {
-        const storedPin = localStorage.getItem('settings_pin');
-        if (storedPin) {
-            setSavedPin(storedPin);
-            setIsLocked(true);
+        if (contextPin) {
+            setSavedPinState(contextPin);
+            setIsLocked(contextLocked);
+        } else {
+            setSavedPinState('');
+            setIsLocked(false);
         }
+    }, [contextPin, contextLocked]);
 
-        const storedAd = localStorage.getItem('ad_apikey');
-        const storedTmdb = localStorage.getItem('tmdb_apikey');
-        
-        if (storedAd) {
-            setApiKey(storedAd);
-            verifyAlldebrid(storedAd);
+    useEffect(() => {
+        if (adApiKey) {
+            setApiKey(adApiKey);
+            verifyAlldebrid(adApiKey);
+        } else {
+            setApiKey('');
+            setAdStatus('idle');
         }
-        if (storedTmdb) {
-            setTmdbKey(storedTmdb);
-            verifyTmdb(storedTmdb);
+    }, [adApiKey]);
+
+    useEffect(() => {
+        if (tmdbApiKey) {
+            setTmdbKey(tmdbApiKey);
+            verifyTmdb(tmdbApiKey);
+        } else {
+            setTmdbKey('');
+            setTmdbStatus('idle');
         }
-    }, []);
+    }, [tmdbApiKey]);
 
     const handleUnlock = () => {
         if (pinInput === savedPin) {
@@ -57,8 +80,8 @@ export const Settings: React.FC = () => {
 
     const handleSetPin = () => {
         if (newPin.length === 4) {
-            localStorage.setItem('settings_pin', newPin);
             setSavedPin(newPin);
+            setSavedPinState(newPin);
             setNewPin('');
             setSaved(true);
             setTimeout(() => setSaved(false), 2000);
@@ -66,19 +89,21 @@ export const Settings: React.FC = () => {
     };
 
     const handleRemovePin = () => {
-        localStorage.removeItem('settings_pin');
         setSavedPin('');
+        setSavedPinState('');
         setSaved(true);
         setTimeout(() => setSaved(false), 2000);
     };
 
     const verifyAlldebrid = async (key: string) => {
+        if (!key) return;
         setAdStatus('checking');
         const isValid = await AlldebridService.verifyKey(key);
         setAdStatus(isValid ? 'valid' : 'invalid');
     };
 
     const verifyTmdb = async (key: string) => {
+        if (!key) return;
         setTmdbStatus('checking');
         const isValid = await TMDBService.verifyKey(key);
         setTmdbStatus(isValid ? 'valid' : 'invalid');
@@ -87,14 +112,14 @@ export const Settings: React.FC = () => {
     const handleSave = async () => {
         let hasChanges = false;
         
-        if (apiKey.trim().length > 0) {
-            localStorage.setItem('ad_apikey', apiKey.trim());
+        if (apiKey.trim() !== adApiKey) {
+            setAdApiKey(apiKey.trim());
             await verifyAlldebrid(apiKey.trim());
             hasChanges = true;
         }
         
-        if (tmdbKey.trim().length > 0) {
-            localStorage.setItem('tmdb_apikey', tmdbKey.trim());
+        if (tmdbKey.trim() !== tmdbApiKey) {
+            setTmdbApiKey(tmdbKey.trim());
             await verifyTmdb(tmdbKey.trim());
             hasChanges = true;
         }
@@ -106,13 +131,13 @@ export const Settings: React.FC = () => {
     };
 
     const handleLogout = () => {
-        localStorage.removeItem('ad_apikey');
+        logoutAlldebrid();
         setApiKey('');
         setAdStatus('idle');
     };
 
     const handleClearTmdb = () => {
-        localStorage.removeItem('tmdb_apikey');
+        logoutTmdb();
         setTmdbKey('');
         setTmdbStatus('idle');
     };

@@ -2,8 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Icons } from '../components/Icon';
 import { AlldebridService } from '../services/alldebrid';
+import { useApp } from '../contexts/AppContext';
 
 export const Setup: React.FC = () => {
+    const { saveConfig } = useApp();
     const { config } = useParams();
     const navigate = useNavigate();
     const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
@@ -31,10 +33,7 @@ export const Setup: React.FC = () => {
                 const isValid = await AlldebridService.verifyKey(settings.ad_apikey);
 
                 if (isValid) {
-                    localStorage.setItem('ad_apikey', settings.ad_apikey);
-                    if (settings.tmdb_apikey) {
-                        localStorage.setItem('tmdb_apikey', settings.tmdb_apikey);
-                    }
+                    await saveConfig(settings.ad_apikey, settings.tmdb_apikey || '');
                     setStatus('success');
                     setMessage("Configuration terminée avec succès !");
                 } else {

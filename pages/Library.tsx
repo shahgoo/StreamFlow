@@ -7,6 +7,7 @@ import { Icons } from '../components/Icon';
 import { useNavigate } from 'react-router-dom';
 import { parseMagnetName } from '../utils/filename';
 import { StorageUtils } from '../utils/storage';
+import { useApp } from '../contexts/AppContext';
 
 type FilterType = 'all' | 'movie' | 'tv';
 
@@ -16,6 +17,7 @@ interface EnrichedMagnet extends Magnet {
 }
 
 export const Library: React.FC = () => {
+    const { adApiKey, tmdbApiKey } = useApp();
     const [magnets, setMagnets] = useState<EnrichedMagnet[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -41,10 +43,7 @@ export const Library: React.FC = () => {
     };
 
     const fetchMagnets = async () => {
-        const apiKey = localStorage.getItem('ad_apikey');
-        const tmdbKey = localStorage.getItem('tmdb_apikey');
-        
-        if (!apiKey) {
+        if (!adApiKey) {
             setError("Clé API manquante");
             setLoading(false);
             return;
@@ -52,7 +51,7 @@ export const Library: React.FC = () => {
 
         try {
             setLoading(true);
-            const response = await AlldebridService.getMagnets(apiKey);
+            const response = await AlldebridService.getMagnets(adApiKey);
             
             if (response.status === 'success') {
                 const rawMagnets = response.data.magnets;
@@ -83,8 +82,8 @@ export const Library: React.FC = () => {
                 setError(null);
 
                 // 2. Lazy Fetch Metadata
-                if (tmdbKey) {
-                    enrichWithMetadata(parsedMagnets, tmdbKey);
+                if (tmdbApiKey) {
+                    enrichWithMetadata(parsedMagnets, tmdbApiKey);
                 }
 
             } else {
@@ -151,7 +150,7 @@ export const Library: React.FC = () => {
 
     useEffect(() => {
         fetchMagnets();
-    }, []);
+    }, [adApiKey, tmdbApiKey]);
 
     const filteredMagnets = useMemo(() => {
         return magnets.filter(m => {

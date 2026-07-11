@@ -6,6 +6,7 @@ import { AlldebridService } from '../services/alldebrid';
 import { TMDBService, TMDBResult } from '../services/tmdb';
 import { StorageUtils } from '../utils/storage';
 import { parseMagnetName } from '../utils/filename';
+import { useApp } from '../contexts/AppContext';
 
 // Extended Magnet type to handle the passed state
 interface DetailedMagnet extends Magnet {
@@ -14,6 +15,7 @@ interface DetailedMagnet extends Magnet {
 }
 
 export const Details: React.FC = () => {
+    const { adApiKey, tmdbApiKey } = useApp();
     const { state } = useLocation();
     const navigate = useNavigate();
     const [magnet, setMagnet] = useState<DetailedMagnet | null>(state?.magnet || null);
@@ -57,14 +59,13 @@ export const Details: React.FC = () => {
     }
 
     const handlePlay = async (linkObj: { filename: string, link: string }) => {
-        const apiKey = localStorage.getItem('ad_apikey');
-        if (!apiKey) return;
+        if (!adApiKey) return;
 
         setUnlocking(linkObj.link);
         setError(null);
 
         try {
-            const response = await AlldebridService.unlockLink(apiKey, linkObj.link);
+            const response = await AlldebridService.unlockLink(adApiKey, linkObj.link);
             if (response.status === 'success') {
                 navigate('/player', { 
                     state: { 
@@ -84,14 +85,13 @@ export const Details: React.FC = () => {
     };
 
     const handleSearchTMDB = async () => {
-        const tmdbKey = localStorage.getItem('tmdb_apikey');
-        if (!tmdbKey) {
+        if (!tmdbApiKey) {
             setError("Clé API TMDB requise pour la recherche");
             return;
         }
 
         setIsSearching(true);
-        const results = await TMDBService.searchCandidates(tmdbKey, searchQuery, editType);
+        const results = await TMDBService.searchCandidates(tmdbApiKey, searchQuery, editType);
         setSearchResults(results);
         setIsSearching(false);
     };
