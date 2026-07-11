@@ -358,7 +358,7 @@ export const Settings: React.FC = () => {
                     </label>
                     <div className="relative">
                         <input
-                            type="text"
+                            type="password"
                             value={tmdbKey}
                             onChange={(e) => {
                                 setTmdbKey(e.target.value);
@@ -427,7 +427,7 @@ export const Settings: React.FC = () => {
                             <div>
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">App ID</label>
                                 <input
-                                    type="text"
+                                    type="password"
                                     value={fbAppId}
                                     onChange={(e) => setFbAppId(e.target.value)}
                                     placeholder="1:123456:web:abcd"

@@ -83,5 +83,56 @@ export const AlldebridService = {
         });
         const response = await fetch(`${BASE_URL}/magnet/delete?${params.toString()}`);
         return await response.json();
+    },
+
+    /**
+     * Fetch files for a specific magnet
+     */
+    getMagnetFiles: async (apiKey: string, id: number): Promise<{ filename: string, size: number, link: string }[]> => {
+        try {
+            const params = new URLSearchParams();
+            params.append('agent', AGENT);
+            params.append('apikey', apiKey);
+            params.append('id[]', id.toString());
+
+            const response = await fetch(`${BASE_URL}/magnet/files?${params.toString()}`);
+            const data = await response.json();
+            if (data.status === 'success' && data.data && data.data.magnets && data.data.magnets.length > 0) {
+                const magnetData = data.data.magnets[0];
+                if (magnetData.files) {
+                    return flattenFiles(magnetData.files);
+                }
+            }
+            return [];
+        } catch (error) {
+            console.error("Failed to fetch magnet files", error);
+            return [];
+        }
     }
 };
+
+interface FileEntry {
+    n: string; // filename
+    s?: number; // size
+    l?: string; // link
+    e?: FileEntry[]; // sub-entries
+}
+
+function flattenFiles(entries: FileEntry[], parentPath: string = ''): { filename: string, size: number, link: string }[] {
+    let files: { filename: string, size: number, link: string }[] = [];
+    
+    entries.forEach(entry => {
+        const currentPath = parentPath ? `${parentPath}/${entry.n}` : entry.n;
+        if (entry.e) {
+            files = files.concat(flattenFiles(entry.e, currentPath));
+        } else if (entry.l) {
+            files.push({
+                filename: entry.n,
+                size: entry.s || 0,
+                link: entry.l
+            });
+        }
+    });
+    
+    return files;
+}
