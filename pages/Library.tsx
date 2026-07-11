@@ -22,7 +22,7 @@ export interface EnrichedMagnet extends Magnet {
 }
 
 export const Library: React.FC = () => {
-    const { adApiKey, tmdbApiKey, firebaseUser } = useApp();
+    const { adApiKey, tmdbApiKey, firebaseUser, contextPin } = useApp();
     const [magnets, setMagnets] = useState<EnrichedMagnet[]>([]);
     const [continueWatching, setContinueWatching] = useState<WatchProgress[]>([]);
     const [loading, setLoading] = useState(true);
@@ -31,6 +31,16 @@ export const Library: React.FC = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [activeTab, setActiveTab] = useState<FilterType>('movie');
     const navigate = useNavigate();
+
+    // Filtres avancés
+    const [activeCategory, setActiveCategory] = useState<string>('all');
+    const [exclude4K, setExclude4K] = useState<boolean>(() => localStorage.getItem('exclude_4k') === 'true');
+    const [kidsMode, setKidsMode] = useState<boolean>(() => localStorage.getItem('kids_mode') === 'true');
+
+    // Modale de vérification PIN
+    const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+    const [pinInput, setPinInput] = useState('');
+    const [pinError, setPinError] = useState(false);
 
     // Filtre des fichiers vidéo valides
     const isVideoFile = (filename: string) => {
@@ -52,7 +62,12 @@ export const Library: React.FC = () => {
     const loadContinueWatching = async () => {
         if (adApiKey) {
             const list = await WatchHistoryService.getContinueWatchingList(!!firebaseUser);
-            setContinueWatching(list);
+            // Si le mode enfants est activé, filtrer aussi la liste de reprise de lecture
+            if (kidsMode) {
+                setContinueWatching(list.filter(item => isKidFriendly(item)));
+            } else {
+                setContinueWatching(list);
+            }
         }
     };
 
@@ -102,7 +117,6 @@ export const Library: React.FC = () => {
 
                 // Convertir les groupes TV en items virtuels
                 const tvMagnets: EnrichedMagnet[] = Object.entries(tvGroups).map(([showKey, group]) => {
-                    // Trier du plus ancien au plus récent (S01 -> S02, etc.)
                     const sortedGroup = [...group].sort((a, b) => a.filename.localeCompare(b.filename, undefined, { numeric: true, sensitivity: 'base' }));
                     const first = sortedGroup[0];
                     const parsed = parseMagnetName(first.filename);
@@ -112,7 +126,6 @@ export const Library: React.FC = () => {
                         mediaType: 'tv',
                         showName: parsed.showName || parsed.title,
                         groupedMagnets: sortedGroup,
-                        // Somme des tailles du groupe
                         size: group.reduce((acc, item) => acc + item.size, 0)
                     };
                 });
@@ -148,13 +161,11 @@ export const Library: React.FC = () => {
             const item = newItems[i];
             const override = overrides[item.id];
 
-            // A. Override manuel
             if (override && override.customTmdbData) {
                 newItems[i].tmdbData = override.customTmdbData;
                 continue; 
             }
 
-            // B. Lecture du cache ou recherche TMDB
             const parsed = parseMagnetName(item.filename);
             const searchTitle = item.mediaType === 'tv' ? (item.showName || parsed.showName || parsed.title) : parsed.title;
             const cacheKey = `${item.mediaType}_${searchTitle}_${parsed.year || ''}`.replace(/\s/g, '').toLowerCase();
@@ -162,13 +173,9 @@ export const Library: React.FC = () => {
             if (cache[cacheKey]) {
                 newItems[i].tmdbData = cache[cacheKey];
             } else {
-                // Rate limit spacing
                 await new Promise(r => setTimeout(r, 150));
-                
-                // Recherche sur TMDB
                 let result = await TMDBService.search(tmdbKey, searchTitle, item.mediaType, parsed.year);
                 
-                // Essai alternatif sans l'année pour les films
                 if (!result && parsed.year && item.mediaType === 'movie') {
                     result = await TMDBService.search(tmdbKey, searchTitle, item.mediaType);
                 }
@@ -177,7 +184,6 @@ export const Library: React.FC = () => {
                     newItems[i].tmdbData = result;
                     cache[cacheKey] = result;
                     cacheUpdated = true;
-                    // Mise à jour de l'UI progressive
                     if (i % 2 === 0) setMagnets([...newItems]);
                 }
             }
@@ -196,35 +202,102 @@ export const Library: React.FC = () => {
 
     useEffect(() => {
         loadContinueWatching();
-    }, [firebaseUser, magnets]);
+    }, [firebaseUser, magnets, kidsMode]);
+
+    // Validation du contenu jeunesse
+    const isKidFriendly = (item: EnrichedMagnet | WatchProgress) => {
+        if (item.tmdbData) {
+            const genreIds = item.tmdbData.genre_ids || (item.tmdbData.genres ? item.tmdbData.genres.map(g => g.id) : []);
+            const kidGenres = [16, 10751, 10762]; // Animation (16), Famille (10751), Kids (10762)
+            return genreIds.some(id => kidGenres.includes(id));
+        }
+        const fn = item.filename.toLowerCase();
+        const kidKeywords = ['kids', 'family', 'animation', 'disney', 'pixar', 'mario', 'sonic', 'pat.patrouille', 'peppa', 'dora', 'anime', 'ghibli', 'shrek', 'frozen', 'nemo', 'toy.story', 'coco', 'aladdin', 'roi.lion', 'pokemon', 'minions'];
+        return kidKeywords.some(kw => fn.includes(kw));
+    };
+
+    const handleToggleKidsMode = () => {
+        if (kidsMode) {
+            // Désactiver le mode enfants exige le PIN si configuré
+            if (contextPin) {
+                setPinInput('');
+                setPinError(false);
+                setIsPinModalOpen(true);
+            } else {
+                setKidsMode(false);
+                localStorage.setItem('kids_mode', 'false');
+                setActiveCategory('all');
+            }
+        } else {
+            // Activer le mode enfants est immédiat (pour sécuriser rapidement)
+            setKidsMode(true);
+            localStorage.setItem('kids_mode', 'true');
+            setActiveCategory('kids');
+        }
+    };
+
+    const handlePinSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (pinInput === contextPin) {
+            setKidsMode(false);
+            localStorage.setItem('kids_mode', 'false');
+            setActiveCategory('all');
+            setIsPinModalOpen(false);
+        } else {
+            setPinError(true);
+            setPinInput('');
+        }
+    };
 
     const filteredMagnets = useMemo(() => {
         return magnets.filter(m => {
             const parsed = parseMagnetName(m.filename);
+            
+            // 1. Filtrage 4K
+            if (exclude4K) {
+                const is4K = parsed.quality === '4K' || parsed.quality === '2160p' || m.filename.includes('2160p') || m.filename.toLowerCase().includes('4k');
+                if (is4K) return false;
+            }
+
+            // 2. Filtrage Mode Enfants
+            if (kidsMode) {
+                if (!isKidFriendly(m)) return false;
+            }
+
+            // 3. Filtrage Recherche
             const titleToCheck = m.tmdbData?.title || m.tmdbData?.name || m.showName || parsed.title;
             const matchesSearch = titleToCheck.toLowerCase().includes(searchQuery.toLowerCase()) || m.filename.toLowerCase().includes(searchQuery.toLowerCase());
+            
+            // 4. Filtrage de l'onglet Films/Séries
             const matchesTab = activeTab === 'all' ? true : m.mediaType === activeTab;
+            
+            // 5. Filtrage par Catégorie de genre (uniquement si Kids Mode inactif)
+            if (!kidsMode && activeCategory !== 'all') {
+                const genreIds = m.tmdbData?.genre_ids || (m.tmdbData?.genres ? m.tmdbData.genres.map(g => g.id) : []);
+                let matchesCategory = false;
+                
+                if (activeCategory === 'action') {
+                    matchesCategory = genreIds.some(id => [28, 12, 10759].includes(id));
+                } else if (activeCategory === 'comedy') {
+                    matchesCategory = genreIds.some(id => [35].includes(id));
+                } else if (activeCategory === 'animation') {
+                    matchesCategory = genreIds.some(id => [16].includes(id));
+                } else if (activeCategory === 'kids') {
+                    matchesCategory = genreIds.some(id => [10751, 10762].includes(id));
+                }
+                
+                if (!matchesCategory) return false;
+            }
+
             return matchesSearch && matchesTab;
         });
-    }, [magnets, searchQuery, activeTab]);
+    }, [magnets, searchQuery, activeTab, activeCategory, exclude4K, kidsMode]);
 
     const handleMagnetClick = (magnet: EnrichedMagnet) => {
         navigate(`/view/${magnet.id}`, { state: { magnet } });
     };
 
-    const handlePlayContinueWatching = (progress: WatchProgress) => {
-        navigate('/player', { 
-            state: { 
-                streamUrl: progress.currentTime.toString(), // Sera débridé dans Player ou Details
-                filename: progress.filename,
-                tmdbData: progress.tmdbData,
-                magnetId: progress.magnetId,
-                fileIndex: progress.fileIndex
-            } 
-        });
-    };
-
-    // Écran de clé API manquante
+    // Écran de configuration requise
     if (error === "Clé API manquante") {
         return (
             <div className="flex flex-col items-center justify-center min-h-[80vh] px-4 text-center">
@@ -248,7 +321,7 @@ export const Library: React.FC = () => {
     return (
         <div className="pb-24 pt-4 md:pt-8 px-4 md:px-8 max-w-7xl mx-auto min-h-screen">
             
-            {/* Barre collante de Recherche et Onglets */}
+            {/* Section recherche & Onglets */}
             <div className="sticky top-0 z-40 bg-brand-900/95 backdrop-blur-md pt-2 pb-4 border-b border-white/5 mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <h1 className="text-3xl font-extrabold tracking-tight text-white hidden md:block">StreamFlow</h1>
                 
@@ -275,7 +348,7 @@ export const Library: React.FC = () => {
                         </button>
                     </div>
 
-                    {/* Barre de recherche */}
+                    {/* Recherche */}
                     <div className="relative w-full md:w-64">
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                             <Icons.Search className="h-4 w-4 text-text-muted" />
@@ -288,6 +361,92 @@ export const Library: React.FC = () => {
                             onChange={(e) => setSearchQuery(e.target.value)}
                         />
                     </div>
+                </div>
+            </div>
+
+            {/* BANDEAU D'AVERTISSEMENT MODE ENFANTS SANS CODE PIN */}
+            {kidsMode && !contextPin && (
+                <div className="bg-amber-500/10 border border-amber-500/30 text-amber-300 px-4 py-3 rounded-2xl mb-6 text-xs flex items-center justify-between animate-fade-in shadow-lg">
+                    <div className="flex items-center">
+                        <Icons.AlertCircle className="mr-2 flex-shrink-0" size={16} />
+                        <span><strong>Sécurité parentale :</strong> Aucun code PIN n'est configuré. N'importe qui peut désactiver le Mode Enfants.</span>
+                    </div>
+                    <button 
+                        onClick={() => navigate('/settings')}
+                        className="text-brand-accent font-bold hover:underline ml-4 whitespace-nowrap"
+                    >
+                        Définir un PIN
+                    </button>
+                </div>
+            )}
+
+            {/* BARRE DE FILTRES AVANCÉS & CATÉGORIES */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8 bg-brand-800/30 p-4 rounded-2xl border border-white/5 animate-fade-in">
+                
+                {/* Catégories (masqué si Kids Mode est actif car verrouillé) */}
+                <div className="flex items-center space-x-2 overflow-x-auto no-scrollbar py-1">
+                    <span className="text-[10px] font-extrabold text-text-muted uppercase tracking-wider mr-2">Catégories :</span>
+                    {kidsMode ? (
+                        <span className="bg-green-500/10 text-green-400 border border-green-500/20 px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center">
+                            👶 Mode Enfants Activé (Filtre Jeunesse)
+                        </span>
+                    ) : (
+                        <div className="flex space-x-1.5">
+                            {[
+                                { id: 'all', label: 'Tout' },
+                                { id: 'action', label: '⚔️ Action & Aventure' },
+                                { id: 'comedy', label: '😂 Comédie' },
+                                { id: 'animation', label: '🎨 Animation' },
+                                { id: 'kids', label: '🧸 Jeunesse' }
+                            ].map(cat => (
+                                <button
+                                    key={cat.id}
+                                    onClick={() => setActiveCategory(cat.id)}
+                                    className={`px-3.5 py-1.5 text-xs font-bold rounded-xl transition-all whitespace-nowrap ${
+                                        activeCategory === cat.id 
+                                        ? 'bg-white text-black font-extrabold shadow-sm' 
+                                        : 'bg-brand-900/60 text-gray-400 hover:text-white border border-white/5'
+                                    }`}
+                                >
+                                    {cat.label}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                {/* Filtres & Toggles de Sécurité */}
+                <div className="flex items-center gap-2.5">
+                    {/* Toggle 4K */}
+                    <button
+                        onClick={() => {
+                            const next = !exclude4K;
+                            setExclude4K(next);
+                            localStorage.setItem('exclude_4k', next.toString());
+                        }}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition-all flex items-center ${
+                            exclude4K 
+                            ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' 
+                            : 'bg-brand-900/60 border-white/5 text-gray-400 hover:text-white'
+                        }`}
+                        title="Masquer les fichiers vidéo en résolution 4K (2160p)"
+                    >
+                        <Icons.XCircle size={14} className="mr-1.5" />
+                        Masquer la 4K
+                    </button>
+
+                    {/* Toggle Mode Enfants */}
+                    <button
+                        onClick={handleToggleKidsMode}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition-all flex items-center shadow-lg ${
+                            kidsMode 
+                            ? 'bg-green-600 border-green-500 text-white font-extrabold' 
+                            : 'bg-brand-900/60 border-white/5 text-gray-400 hover:text-white'
+                        }`}
+                    >
+                        {kidsMode ? <Icons.Lock size={14} className="mr-1.5" /> : <Icons.Unlock size={14} className="mr-1.5" />}
+                        Mode Enfants {kidsMode ? 'Actif' : 'Désactivé'}
+                    </button>
                 </div>
             </div>
 
@@ -308,8 +467,8 @@ export const Library: React.FC = () => {
             ) : (
                 <div className="animate-fade-in">
                     
-                    {/* Affiche Héro (films avec backdrop TMDB uniquement) */}
-                    {activeTab === 'movie' && searchQuery === '' && (
+                    {/* Affiche Héro (uniquement si aucun filtre de recherche/catégorie n'est actif) */}
+                    {activeTab === 'movie' && searchQuery === '' && activeCategory === 'all' && !kidsMode && (
                         <HeroBanner 
                             mediaItems={magnets.filter(m => m.mediaType === 'movie')}
                             onPlayClick={handleMagnetClick}
@@ -317,7 +476,7 @@ export const Library: React.FC = () => {
                         />
                     )}
 
-                    {/* Section "Reprendre la lecture" (Continue Watching) */}
+                    {/* Section "Reprendre la lecture" */}
                     {continueWatching.length > 0 && searchQuery === '' && (
                         <div className="mb-10">
                             <h2 className="text-lg md:text-xl font-extrabold text-white mb-4 tracking-wide flex items-center">
@@ -340,13 +499,10 @@ export const Library: React.FC = () => {
                                                     {item.filename}
                                                 </div>
                                             )}
-                                            {/* Gradient Scrim */}
                                             <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent"></div>
                                             
-                                            {/* Titre et épisode */}
                                             <div className="absolute inset-x-0 bottom-0 p-3">
                                                 <p className="text-white text-xs font-bold truncate">{item.tmdbData?.title || item.tmdbData?.name || item.filename}</p>
-                                                {/* Barre de progression de lecture */}
                                                 <div className="w-full h-1 bg-white/20 rounded-full mt-2 overflow-hidden">
                                                     <div 
                                                         className="h-full bg-brand-accent rounded-full" 
@@ -364,7 +520,13 @@ export const Library: React.FC = () => {
                     {/* Grille principale des médias */}
                     <div className="flex items-center justify-between mb-4">
                         <h2 className="text-lg md:text-xl font-extrabold text-white tracking-wide">
-                            {activeTab === 'movie' ? 'Tous les Films' : activeTab === 'tv' ? 'Toutes les Séries' : 'Tous les Fichiers'}
+                            {kidsMode 
+                                ? 'Bibliothèque Jeunesse' 
+                                : activeTab === 'movie' 
+                                    ? 'Tous les Films' 
+                                    : activeTab === 'tv' 
+                                        ? 'Toutes les Séries' 
+                                        : 'Tous les Fichiers'}
                         </h2>
                         {metadataLoading && (
                             <span className="text-[10px] text-text-muted flex items-center">
@@ -394,6 +556,55 @@ export const Library: React.FC = () => {
                             ))}
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* MODALE DE VÉRIFICATION PIN POUR QUITTER LE MODE ENFANTS */}
+            {isPinModalOpen && (
+                <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm">
+                    <div className="bg-brand-800 w-full max-w-sm rounded-3xl shadow-2xl border border-white/10 p-6 text-center animate-fade-in">
+                        <div className="w-12 h-12 bg-brand-accent/15 text-brand-accent rounded-2xl flex items-center justify-center mx-auto mb-4">
+                            <Icons.Lock size={24} />
+                        </div>
+                        <h3 className="text-lg font-extrabold text-white mb-1">Contrôle Parental</h3>
+                        <p className="text-text-secondary text-xs mb-5">Saisissez votre code PIN à 4 chiffres pour désactiver le Mode Enfants.</p>
+                        
+                        <form onSubmit={handlePinSubmit} className="space-y-4">
+                            <input 
+                                type="password" 
+                                maxLength={4}
+                                placeholder="••••"
+                                value={pinInput}
+                                onChange={(e) => {
+                                    setPinInput(e.target.value.replace(/\D/g, '').slice(0, 4));
+                                    setPinError(false);
+                                }}
+                                className={`w-28 bg-brand-900 border ${pinError ? 'border-red-500 focus:ring-red-500' : 'border-gray-700 focus:ring-brand-accent'} rounded-xl px-4 py-3 text-white text-center tracking-widest outline-none text-xl focus:ring-2`}
+                                autoFocus
+                            />
+                            
+                            {pinError && (
+                                <p className="text-red-400 text-xs font-bold animate-pulse">Code PIN incorrect.</p>
+                            )}
+
+                            <div className="flex gap-2 pt-2">
+                                <button 
+                                    type="button"
+                                    onClick={() => setIsPinModalOpen(false)}
+                                    className="flex-1 py-2.5 bg-white/5 text-gray-300 rounded-xl text-xs font-bold hover:bg-white/10 transition-colors"
+                                >
+                                    Annuler
+                                </button>
+                                <button 
+                                    type="submit"
+                                    disabled={pinInput.length !== 4}
+                                    className="flex-1 py-2.5 bg-brand-accent text-black rounded-xl text-xs font-bold disabled:opacity-50 hover:bg-amber-600 transition-colors"
+                                >
+                                    Valider
+                                </button>
+                            </div>
+                        </form>
+                    </div>
                 </div>
             )}
         </div>
