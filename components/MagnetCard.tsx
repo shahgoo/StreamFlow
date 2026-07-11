@@ -2,6 +2,7 @@ import React from 'react';
 import { Magnet } from '../types';
 import { Icons } from './Icon';
 import { TMDBService } from '../services/tmdb';
+import { parseMagnetName } from '../utils/filename';
 
 interface MagnetCardProps {
     magnet: Magnet;
@@ -9,79 +10,108 @@ interface MagnetCardProps {
     onClick: (magnet: Magnet) => void;
 }
 
-// Helper to clean filenames for display (fallback)
-const cleanName = (name: string) => {
-    return name
-        .replace(/\./g, ' ')
-        .replace(/(1080p|720p|2160p|4k|bluray|x264|x265|hevc|web-dl|hdr).*/i, '')
-        .trim();
-};
-
-// Generate a deterministic color gradient based on string
-const stringToColor = (str: string) => {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-        hash = str.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    const c = (hash & 0x00FFFFFF).toString(16).toUpperCase();
-    return '#' + '00000'.substring(0, 6 - c.length) + c;
-};
-
 export const MagnetCard: React.FC<MagnetCardProps> = ({ magnet, posterPath, onClick }) => {
-    const displayName = cleanName(magnet.filename);
+    const parsed = parseMagnetName(magnet.filename);
+    const displayName = parsed.title;
     const isReady = magnet.statusCode === 4;
     
-    const fallbackGradient = `linear-gradient(135deg, ${stringToColor(magnet.filename)}AA 0%, #1e293b 100%)`;
-    const posterUrl = TMDBService.getImageUrl(posterPath);
+    // Gradient de fallback déterministe pour les torrents sans affiche TMDB
+    const stringToColor = (str: string) => {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            hash = str.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        const c = (hash & 0x00FFFFFF).toString(16).toUpperCase();
+        return '#' + '00000'.substring(0, 6 - c.length) + c;
+    };
+    
+    const fallbackGradient = `linear-gradient(135deg, ${stringToColor(magnet.filename)}80 0%, #06080F 100%)`;
+    const posterUrl = TMDBService.getImageUrl(posterPath, 'w500');
 
     return (
         <div 
             onClick={() => onClick(magnet)}
-            className="group relative bg-brand-800 rounded-xl overflow-hidden shadow-lg cursor-pointer transform transition-all duration-200 hover:scale-[1.02] hover:shadow-xl hover:ring-2 hover:ring-brand-accent/50 aspect-[2/3]"
+            className="group relative bg-brand-800 rounded-2xl overflow-hidden shadow-lg cursor-pointer transform transition-all duration-300 hover:scale-105 hover:shadow-glow-accent-lg hover:ring-2 hover:ring-brand-accent/70 aspect-[2/3] animate-fade-in"
         >
-            {/* Poster or Gradient Placeholder */}
+            {/* Affiche de fond ou dégradé de fallback */}
             {posterUrl ? (
                 <div className="absolute inset-0 w-full h-full bg-brand-900">
                      <img 
                         src={posterUrl} 
                         alt={displayName} 
                         loading="lazy"
-                        className="w-full h-full object-cover transition-opacity duration-300 opacity-90 group-hover:opacity-100" 
+                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 opacity-90 group-hover:opacity-100" 
                      />
-                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60"></div>
+                     <div className="absolute inset-0 bg-gradient-to-t from-black via-black/35 to-transparent"></div>
                 </div>
             ) : (
                 <div 
-                    className="absolute inset-0 w-full h-full bg-cover bg-center transition-opacity opacity-80 group-hover:opacity-100"
+                    className="absolute inset-0 w-full h-full bg-cover bg-center transition-all duration-500 group-hover:scale-105 opacity-85 group-hover:opacity-100"
                     style={{ background: fallbackGradient }}
                 >
-                    <div className="absolute inset-0 flex items-center justify-center p-4">
-                         <span className="text-white font-bold text-center text-lg drop-shadow-md break-words line-clamp-4">
+                    <div className="absolute inset-0 flex flex-col items-center justify-center p-4">
+                         <div className="w-12 h-12 rounded-full bg-brand-accent/10 flex items-center justify-center mb-3">
+                              {parsed.type === 'tv' ? <Icons.Film className="text-brand-accent" size={24} /> : <Icons.Play className="text-brand-accent ml-0.5" size={24} fill="currentColor" />}
+                         </div>
+                         <span className="text-white font-bold text-center text-sm md:text-base drop-shadow-md break-words line-clamp-3 px-2">
                             {displayName}
                          </span>
+                         {parsed.year && (
+                             <span className="text-[10px] text-text-secondary mt-1 bg-white/5 px-2 py-0.5 rounded-full">
+                                 {parsed.year}
+                             </span>
+                         )}
                     </div>
                 </div>
             )}
 
-            {/* Status Overlay */}
+            {/* Badges de Qualité (En haut à gauche) */}
+            <div className="absolute top-2 left-2 z-10 flex flex-wrap gap-1 max-w-[70%]">
+                {parsed.quality && (
+                    <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-md text-white border border-white/10 uppercase tracking-wider">
+                        {parsed.quality}
+                    </span>
+                )}
+                {parsed.dolbyVision && (
+                    <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-purple-600/80 backdrop-blur-md text-white uppercase tracking-wider">
+                        DV
+                    </span>
+                )}
+                {parsed.hdr && !parsed.dolbyVision && (
+                    <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-amber-600/80 backdrop-blur-md text-white uppercase tracking-wider">
+                        HDR
+                    </span>
+                )}
+            </div>
+
+            {/* Icone de Status (En haut à droite) */}
             <div className="absolute top-2 right-2 z-10">
                 {isReady ? (
-                    <div className="bg-green-500/90 text-white p-1.5 rounded-full shadow-sm backdrop-blur-md">
+                    <div className="bg-brand-accent text-black p-2 rounded-xl shadow-md backdrop-blur-md transition-transform duration-300 group-hover:scale-110">
                         <Icons.Play size={12} fill="currentColor" />
                     </div>
                 ) : (
-                    <div className="bg-yellow-500/90 text-white p-1.5 rounded-full shadow-sm animate-pulse backdrop-blur-md">
+                    <div className="bg-black/60 text-brand-accent p-2 rounded-xl shadow-md animate-spin backdrop-blur-md">
                          <Icons.RefreshCw size={12} />
                     </div>
                 )}
             </div>
 
-            {/* Bottom Info */}
-            <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black via-black/60 to-transparent flex flex-col justify-end p-3 z-10 pointer-events-none">
-                 <p className="text-white text-xs font-semibold truncate opacity-100 shadow-black drop-shadow-md">{displayName}</p>
-                 <p className="text-gray-300 text-[10px] mt-0.5 uppercase tracking-wide font-medium">
-                    {magnet.status} • {(magnet.size / 1024 / 1024 / 1024).toFixed(2)} GB
+            {/* Overlay d'informations au bas */}
+            <div className="absolute inset-x-0 bottom-0 h-1/2 flex flex-col justify-end p-3.5 z-10 pointer-events-none">
+                 <p className="text-white text-xs md:text-sm font-bold truncate drop-shadow-md tracking-wide group-hover:text-brand-accent transition-colors duration-200">
+                     {displayName}
                  </p>
+                 <div className="flex items-center space-x-1.5 text-[10px] text-text-secondary mt-1 font-medium tracking-wide drop-shadow-sm">
+                     {parsed.type === 'tv' && parsed.season !== undefined && (
+                         <span className="text-brand-accent font-semibold">
+                             S{parsed.season.toString().padStart(2, '0')}
+                             {parsed.episode !== undefined && `E${parsed.episode.toString().padStart(2, '0')}`}
+                         </span>
+                     )}
+                     {parsed.type === 'tv' && parsed.season !== undefined && <span>•</span>}
+                     <span>{(magnet.size / 1024 / 1024 / 1024).toFixed(2)} GB</span>
+                 </div>
             </div>
         </div>
     );

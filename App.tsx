@@ -13,7 +13,7 @@ const App: React.FC = () => {
         <AppProvider>
             <HashRouter>
                 <div className="min-h-screen bg-brand-900 text-white font-sans selection:bg-brand-accent selection:text-black">
-                    <div className="pb-16 md:pb-0 md:pt-16">
+                    <div className="pb-20 md:pb-0 md:pl-24">
                         <Routes>
                             <Route path="/" element={<Library />} />
                             <Route path="/settings" element={<Settings />} />
