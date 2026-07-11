@@ -84,6 +84,45 @@ export const Details: React.FC = () => {
         setHistoryList(progressHistory);
     }, [magnet?.id, tmdbApiKey]);
 
+    // Charger la liste des fichiers vidéo du magnet ou des magnets du groupe
+    useEffect(() => {
+        const fetchFiles = async () => {
+            if (!magnet || !adApiKey) return;
+            
+            try {
+                if (magnet.groupedMagnets && magnet.groupedMagnets.length > 0) {
+                    const needsLoading = magnet.groupedMagnets.some(m => !m.links || m.links.length === 0);
+                    if (needsLoading) {
+                        const updatedGrouped = await Promise.all(
+                            magnet.groupedMagnets.map(async (m) => {
+                                if (!m.links || m.links.length === 0) {
+                                    const files = await AlldebridService.getMagnetFiles(adApiKey, m.id);
+                                    return { ...m, links: files };
+                                }
+                                return m;
+                            })
+                        );
+                        setMagnet(prev => prev ? {
+                            ...prev,
+                            groupedMagnets: updatedGrouped
+                        } : null);
+                    }
+                } else if (!magnet.links || magnet.links.length === 0) {
+                    const files = await AlldebridService.getMagnetFiles(adApiKey, magnet.id);
+                    setMagnet(prev => prev ? {
+                        ...prev,
+                        links: files
+                    } : null);
+                }
+            } catch (e) {
+                console.error("Failed to fetch magnet files", e);
+                setError("Impossible de récupérer la liste des fichiers vidéo depuis Alldebrid.");
+            }
+        };
+
+        fetchFiles();
+    }, [magnet?.id, adApiKey]);
+
     if (!magnet) {
         return (
             <div className="flex flex-col items-center justify-center min-h-screen text-center p-4">
