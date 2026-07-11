@@ -19,7 +19,9 @@ import {
   Lock,
   Unlock,
   Copy,
-  Check
+  Check,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 
 export const Icons = {
@@ -42,5 +44,7 @@ export const Icons = {
   Lock,
   Unlock,
   Copy,
-  Check
+  Check,
+  Volume2,
+  VolumeX
 };

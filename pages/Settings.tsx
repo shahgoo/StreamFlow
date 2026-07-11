@@ -28,11 +28,21 @@ export const Settings: React.FC = () => {
     const [apiKey, setApiKey] = useState(adApiKey);
     const [tmdbKey, setTmdbKey] = useState(tmdbApiKey);
     const [savedPin, setSavedPinState] = useState(contextPin);
+
+    // Firebase Config State
+    const [fbApiKey, setFbApiKey] = useState(localStorage.getItem('fb_apikey') || '');
+    const [fbProjectId, setFbProjectId] = useState(localStorage.getItem('fb_projectid') || '');
+    const [fbAppId, setFbAppId] = useState(localStorage.getItem('fb_appid') || '');
+    const [fbAuthDomain, setFbAuthDomain] = useState(localStorage.getItem('fb_authdomain') || '');
+    const [fbStorageBucket, setFbStorageBucket] = useState(localStorage.getItem('fb_storagebucket') || '');
+    const [fbMessagingSenderId, setFbMessagingSenderId] = useState(localStorage.getItem('fb_messagingid') || '');
+    const { firebaseConfigured, syncWithFirebase } = useApp();
     
     // UI State
     const [adStatus, setAdStatus] = useState<ApiStatus>('idle');
     const [tmdbStatus, setTmdbStatus] = useState<ApiStatus>('idle');
     const [saved, setSaved] = useState(false);
+    const [cacheCleared, setCacheCleared] = useState(false);
     const [showShare, setShowShare] = useState(false);
     const [generatedLink, setGeneratedLink] = useState('');
     const [copied, setCopied] = useState(false);
@@ -123,6 +133,22 @@ export const Settings: React.FC = () => {
             await verifyTmdb(tmdbKey.trim());
             hasChanges = true;
         }
+
+        // Sauvegarde de la configuration Firebase
+        const storedFbApiKey = localStorage.getItem('fb_apikey') || '';
+        const storedFbProjectId = localStorage.getItem('fb_projectid') || '';
+        
+        if (fbApiKey.trim() !== storedFbApiKey || fbProjectId.trim() !== storedFbProjectId) {
+            localStorage.setItem('fb_apikey', fbApiKey.trim());
+            localStorage.setItem('fb_authdomain', fbAuthDomain.trim());
+            localStorage.setItem('fb_projectid', fbProjectId.trim());
+            localStorage.setItem('fb_storagebucket', fbStorageBucket.trim());
+            localStorage.setItem('fb_messagingid', fbMessagingSenderId.trim());
+            localStorage.setItem('fb_appid', fbAppId.trim());
+            
+            await syncWithFirebase();
+            hasChanges = true;
+        }
         
         if (hasChanges) {
             setSaved(true);
@@ -140,6 +166,12 @@ export const Settings: React.FC = () => {
         logoutTmdb();
         setTmdbKey('');
         setTmdbStatus('idle');
+    };
+
+    const handleClearTmdbCache = () => {
+        localStorage.removeItem('tmdb_cache');
+        setCacheCleared(true);
+        setTimeout(() => setCacheCleared(false), 2000);
     };
 
     const generateShareLink = () => {
@@ -340,12 +372,111 @@ export const Settings: React.FC = () => {
                         </div>
                     </div>
                     {tmdbKey && (
-                        <div className="mt-2 flex justify-end">
+                        <div className="mt-2 flex justify-between items-center">
+                            <button 
+                                onClick={handleClearTmdbCache} 
+                                className={`text-[10px] px-2 py-1 rounded border transition-colors ${
+                                    cacheCleared 
+                                    ? 'bg-green-900/20 border-green-500/50 text-green-400' 
+                                    : 'bg-white/5 border-white/10 text-gray-400 hover:text-white'
+                                }`}
+                            >
+                                {cacheCleared ? 'Cache vidé !' : 'Vider le cache des affiches'}
+                            </button>
                             <button onClick={handleClearTmdb} className="text-xs text-red-400 hover:text-red-300 flex items-center">
                                 <Icons.Trash2 size={12} className="mr-1" /> Supprimer la clé
                             </button>
                         </div>
                     )}
+                </div>
+
+                {/* Firebase Cloud Sync Configuration */}
+                <div className="bg-brand-800 rounded-xl p-6 shadow-lg border border-white/5">
+                    <label className="flex items-center text-lg font-semibold text-white mb-2">
+                        <Icons.Key className="mr-2 text-green-400" size={20} />
+                        Synchronisation Cloud (Firebase)
+                    </label>
+                    <p className="text-xs text-gray-400 mb-4 leading-relaxed">
+                        Optionnel. Connectez une base de données Firebase Firestore gratuite pour synchroniser vos historiques de lecture et vos corrections de posters entre tous les appareils de votre foyer.
+                    </p>
+                    
+                    <div className="space-y-3">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">API Key</label>
+                                <input
+                                    type="password"
+                                    value={fbApiKey}
+                                    onChange={(e) => setFbApiKey(e.target.value)}
+                                    placeholder="AIzaSy..."
+                                    className="w-full bg-brand-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:ring-1 focus:ring-brand-accent outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Project ID</label>
+                                <input
+                                    type="text"
+                                    value={fbProjectId}
+                                    onChange={(e) => setFbProjectId(e.target.value)}
+                                    placeholder="streamflow-app"
+                                    className="w-full bg-brand-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:ring-1 focus:ring-brand-accent outline-none"
+                                />
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">App ID</label>
+                                <input
+                                    type="text"
+                                    value={fbAppId}
+                                    onChange={(e) => setFbAppId(e.target.value)}
+                                    placeholder="1:123456:web:abcd"
+                                    className="w-full bg-brand-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:ring-1 focus:ring-brand-accent outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Auth Domain</label>
+                                <input
+                                    type="text"
+                                    value={fbAuthDomain}
+                                    onChange={(e) => setFbAuthDomain(e.target.value)}
+                                    placeholder="streamflow.firebaseapp.com"
+                                    className="w-full bg-brand-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:ring-1 focus:ring-brand-accent outline-none"
+                                />
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Storage Bucket (Optionnel)</label>
+                                <input
+                                    type="text"
+                                    value={fbStorageBucket}
+                                    onChange={(e) => setFbStorageBucket(e.target.value)}
+                                    placeholder="streamflow.appspot.com"
+                                    className="w-full bg-brand-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:ring-1 focus:ring-brand-accent outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Messaging Sender ID (Optionnel)</label>
+                                <input
+                                    type="text"
+                                    value={fbMessagingSenderId}
+                                    onChange={(e) => setFbMessagingSenderId(e.target.value)}
+                                    placeholder="123456789"
+                                    className="w-full bg-brand-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:ring-1 focus:ring-brand-accent outline-none"
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="mt-4 flex items-center justify-between border-t border-white/5 pt-3">
+                        <span className="text-[10px] text-gray-500 font-bold">STATUT CLOUD :</span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                            firebaseConfigured ? 'text-green-400 bg-green-900/20' : 'text-gray-500 bg-gray-800'
+                        }`}>
+                            {firebaseConfigured ? 'ACTIF (SYNCHRONISÉ)' : 'INACTIF'}
+                        </span>
+                    </div>
                 </div>
 
                 {/* Family Sharing */}
