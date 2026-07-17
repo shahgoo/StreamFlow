@@ -33,6 +33,38 @@ export interface TMDBResult {
             type: string;
         }[];
     };
+    genre_ids?: number[];
+    seasons?: {
+        id: number;
+        name: string;
+        season_number: number;
+        episode_count: number;
+        poster_path?: string | null;
+        overview?: string;
+        air_date?: string;
+    }[];
+}
+
+export interface TMDBEpisode {
+    id: number;
+    name: string;
+    overview?: string;
+    still_path?: string | null;
+    episode_number: number;
+    season_number: number;
+    air_date?: string;
+    runtime?: number;
+    vote_average?: number;
+}
+
+export interface TMDBSeason {
+    id: number;
+    name: string;
+    overview?: string;
+    poster_path?: string | null;
+    season_number: number;
+    air_date?: string;
+    episodes: TMDBEpisode[];
 }
 
 export const TMDBService = {
@@ -143,6 +175,24 @@ export const TMDBService = {
         } catch (error) {
             console.error("Erreur lors de la récupération des similaires TMDB :", error);
             return [];
+        }
+    },
+
+    /**
+     * Récupérer les détails d'une saison (liste d'épisodes avec images et synopsis)
+     */
+    getSeasonDetails: async (apiKey: string, tvId: number, seasonNumber: number): Promise<TMDBSeason | null> => {
+        try {
+            const params = new URLSearchParams({
+                api_key: apiKey,
+                language: 'fr-FR'
+            });
+            const res = await fetch(`${BASE_URL}/tv/${tvId}/season/${seasonNumber}?${params.toString()}`);
+            if (!res.ok) return null;
+            return await res.json();
+        } catch (error) {
+            console.error(`Erreur lors de la récupération de la saison ${seasonNumber} :`, error);
+            return null;
         }
     },
 

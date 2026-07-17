@@ -3,7 +3,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Magnet } from '../types';
 import { Icons } from '../components/Icon';
 import { AlldebridService } from '../services/alldebrid';
-import { TMDBService, TMDBResult } from '../services/tmdb';
+import { TMDBService, TMDBResult, TMDBSeason } from '../services/tmdb';
 import { StorageUtils } from '../utils/storage';
 import { parseMagnetName } from '../utils/filename';
 import { useApp } from '../contexts/AppContext';
@@ -27,6 +27,8 @@ export const Details: React.FC = () => {
     const [richDetails, setRichDetails] = useState<TMDBResult | null>(null);
     const [similarMedias, setSimilarMedias] = useState<TMDBResult[]>([]);
     const [activeSeason, setActiveSeason] = useState<number | null>(null);
+    const [seasonDetails, setSeasonDetails] = useState<TMDBSeason | null>(null);
+    const [seasonLoading, setSeasonLoading] = useState(false);
     
     // Playback State
     const [unlocking, setUnlocking] = useState<string | null>(null);
@@ -108,6 +110,30 @@ export const Details: React.FC = () => {
         const progressHistory = WatchHistoryService.getLocalHistory();
         setHistoryList(progressHistory);
     }, [magnet?.id, tmdbApiKey]);
+
+    // Charger les détails de la saison active depuis TMDB
+    useEffect(() => {
+        const fetchSeasonDetails = async () => {
+            if (!magnet?.tmdbData?.id || !tmdbApiKey || activeSeason === null) {
+                setSeasonDetails(null);
+                return;
+            }
+            const isTv = magnet.mediaType === 'tv' || !!magnet.groupedMagnets;
+            if (!isTv) return;
+
+            setSeasonLoading(true);
+            try {
+                const details = await TMDBService.getSeasonDetails(tmdbApiKey, magnet.tmdbData.id, activeSeason);
+                setSeasonDetails(details);
+            } catch (e) {
+                console.error('Erreur chargement saison TMDB', e);
+                setSeasonDetails(null);
+            } finally {
+                setSeasonLoading(false);
+            }
+        };
+        fetchSeasonDetails();
+    }, [magnet?.tmdbData?.id, tmdbApiKey, activeSeason]);
 
     // Charger la liste des fichiers vidéo du magnet ou des magnets du groupe
     useEffect(() => {
@@ -416,51 +442,73 @@ export const Details: React.FC = () => {
 
                                  {/* Liste des Épisodes de la saison active */}
                                  <div className="space-y-3 mt-4">
+                                      {seasonLoading && (
+                                          <div className="flex items-center justify-center py-6 text-text-secondary text-xs">
+                                              <Icons.RefreshCw className="animate-spin mr-2" size={14} />
+                                              Chargement des épisodes...
+                                          </div>
+                                      )}
                                       {seasons.find(s => s.seasonNumber === activeSeason)?.episodes.map((file, idx) => {
                                           const progressKey = `${file.magnetId}_${file.fileIndex}`;
                                           const progress = historyList[progressKey];
                                           const parsedEp = parseMagnetName(file.filename);
+                                          const epNum = parsedEp.episode ?? file.episode;
+                                          const tmdbEp = seasonDetails?.episodes?.find(e => e.episode_number === epNum);
+                                          const stillUrl = TMDBService.getImageUrl(tmdbEp?.still_path, 'w500');
 
                                           return (
                                               <div 
                                                   key={idx}
-                                                  className="bg-brand-900/60 hover:bg-brand-800 border border-white/5 rounded-2xl p-4 flex flex-col justify-between group transition-all"
+                                                  className="bg-brand-900/60 hover:bg-brand-800 border border-white/5 rounded-2xl overflow-hidden group transition-all"
                                               >
-                                                  <div className="flex items-start justify-between mb-3 min-w-0">
-                                                      <div className="min-w-0 mr-4">
-                                                          <span className="text-[10px] font-extrabold text-brand-accent uppercase tracking-wider mb-0.5 block">
-                                                              Épisode {parsedEp.episode ?? file.episode}
-                                                          </span>
-                                                          <p className="text-sm font-semibold text-white truncate" title={file.filename}>
-                                                              {file.filename}
-                                                          </p>
-                                                      </div>
-                                                      
-                                                      <button
-                                                          onClick={() => handlePlay(file)}
-                                                          disabled={unlocking === file.link}
-                                                          className="flex-none flex items-center justify-center bg-white text-black h-10 w-10 rounded-xl hover:bg-brand-accent hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
-                                                      >
-                                                          {unlocking === file.link ? (
-                                                              <Icons.RefreshCw className="animate-spin h-4 w-4" />
+                                                  <div className="flex">
+                                                      {/* Vignette de l'épisode */}
+                                                      <div className="relative flex-none w-40 md:w-52 aspect-video bg-brand-800">
+                                                          {stillUrl ? (
+                                                              <img src={stillUrl} alt={tmdbEp?.name || `Épisode ${epNum}`} className="w-full h-full object-cover" />
                                                           ) : (
-                                                              <Icons.Play size={16} fill="currentColor" className="ml-0.5" />
+                                                              <div className="w-full h-full flex items-center justify-center">
+                                                                  <Icons.Film size={24} className="text-text-muted" />
+                                                              </div>
                                                           )}
-                                                      </button>
-                                                  </div>
-
-                                                  {/* Barre de progression si déjà commencé */}
-                                                  {progress && (
-                                                      <div className="w-full">
-                                                          <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden">
-                                                              <div className="h-full bg-brand-accent" style={{ width: `${progress.percentage}%` }}></div>
-                                                          </div>
-                                                          <div className="flex justify-between text-[9px] text-text-secondary mt-1">
-                                                              <span>Reprendre à {Math.floor(progress.currentTime / 60)} min</span>
-                                                              <span>{progress.percentage.toFixed(0)}% vu</span>
-                                                          </div>
+                                                          <button
+                                                              onClick={() => handlePlay(file)}
+                                                              disabled={unlocking === file.link}
+                                                              className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                          >
+                                                              {unlocking === file.link ? (
+                                                                  <Icons.RefreshCw className="animate-spin h-8 w-8 text-white" />
+                                                              ) : (
+                                                                  <div className="bg-white/90 rounded-full p-2.5">
+                                                                      <Icons.Play size={20} fill="black" className="ml-0.5 text-black" />
+                                                                  </div>
+                                                              )}
+                                                          </button>
+                                                          {/* Barre de progression en bas de la vignette */}
+                                                          {progress && (
+                                                              <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/40">
+                                                                  <div className="h-full bg-brand-accent" style={{ width: `${progress.percentage}%` }}></div>
+                                                              </div>
+                                                          )}
                                                       </div>
-                                                  )}
+
+                                                      {/* Infos de l'épisode */}
+                                                      <div className="flex-1 p-3.5 min-w-0">
+                                                          <span className="text-[10px] font-extrabold text-brand-accent uppercase tracking-wider mb-0.5 block">
+                                                              Épisode {epNum}{tmdbEp?.runtime ? ` · ${tmdbEp.runtime} min` : ''}
+                                                          </span>
+                                                          <p className="text-sm font-semibold text-white truncate mb-1" title={tmdbEp?.name || file.filename}>
+                                                              {tmdbEp?.name || file.filename}
+                                                          </p>
+                                                          {tmdbEp?.overview ? (
+                                                              <p className="text-[11px] text-text-secondary leading-relaxed line-clamp-2">
+                                                                  {tmdbEp.overview}
+                                                              </p>
+                                                          ) : (
+                                                              <p className="text-[10px] text-text-muted truncate">{file.filename}</p>
+                                                          )}
+                                                      </div>
+                                                  </div>
                                               </div>
                                           );
                                       })}

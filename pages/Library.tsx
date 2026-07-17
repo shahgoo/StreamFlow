@@ -29,11 +29,11 @@ export const Library: React.FC = () => {
     const [metadataLoading, setMetadataLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
-    const [activeTab, setActiveTab] = useState<FilterType>('movie');
+    const [activeTab, setActiveTab] = useState<FilterType>(() => (sessionStorage.getItem('sf_activeTab') as FilterType) || 'movie');
     const navigate = useNavigate();
 
     // Filtres avancés
-    const [activeCategory, setActiveCategory] = useState<string>('all');
+    const [activeCategory, setActiveCategory] = useState<string>(() => sessionStorage.getItem('sf_activeCategory') || 'all');
     const [exclude4K, setExclude4K] = useState<boolean>(() => localStorage.getItem('exclude_4k') === 'true');
     const [kidsMode, setKidsMode] = useState<boolean>(() => localStorage.getItem('kids_mode') === 'true');
 
@@ -41,6 +41,10 @@ export const Library: React.FC = () => {
     const [isPinModalOpen, setIsPinModalOpen] = useState(false);
     const [pinInput, setPinInput] = useState('');
     const [pinError, setPinError] = useState(false);
+
+    // Persister l'onglet et la catégorie pour survivre à la navigation
+    useEffect(() => { sessionStorage.setItem('sf_activeTab', activeTab); }, [activeTab]);
+    useEffect(() => { sessionStorage.setItem('sf_activeCategory', activeCategory); }, [activeCategory]);
 
     // Filtre des fichiers vidéo valides
     const isVideoFile = (filename: string) => {
@@ -159,10 +163,21 @@ export const Library: React.FC = () => {
 
         for (let i = 0; i < newItems.length; i++) {
             const item = newItems[i];
-            const override = overrides[item.id];
+            
+            // Chercher un override : d'abord par l'ID principal, puis par les IDs groupés (séries TV)
+            let override = overrides[item.id];
+            if (!override && item.groupedMagnets) {
+                for (const gm of item.groupedMagnets) {
+                    if (overrides[gm.id]?.customTmdbData) {
+                        override = overrides[gm.id];
+                        break;
+                    }
+                }
+            }
 
             if (override && override.customTmdbData) {
                 newItems[i].tmdbData = override.customTmdbData;
+                if (override.type) newItems[i].mediaType = override.type;
                 continue; 
             }
 
