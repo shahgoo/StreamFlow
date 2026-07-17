@@ -1,6 +1,13 @@
 const BASE_URL = 'https://api.themoviedb.org/3';
 const IMAGE_BASE_URL = 'https://image.tmdb.org/t/p';
 
+export interface TMDBCollection {
+    id: number;
+    name: string;
+    poster_path?: string | null;
+    backdrop_path?: string | null;
+}
+
 export interface TMDBResult {
     id: number;
     title?: string;
@@ -16,6 +23,8 @@ export interface TMDBResult {
     episode_run_time?: number[]; // Pour les séries
     number_of_seasons?: number;
     number_of_episodes?: number;
+    // Saga/collection à laquelle appartient le film (uniquement renvoyé par /movie/{id})
+    belongs_to_collection?: TMDBCollection | null;
     credits?: {
         cast: {
             id: number;
@@ -121,7 +130,7 @@ export const TMDBService = {
     },
 
     /**
-     * Récupérer les détails d'un film (genres, casting, vidéos...)
+     * Récupérer les détails d'un film (genres, casting, vidéos, collection/saga...)
      */
     getMovieDetails: async (apiKey: string, id: number): Promise<TMDBResult | null> => {
         try {
