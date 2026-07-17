@@ -34,7 +34,7 @@ export const Library: React.FC = () => {
 
     // Filtres avancés
     const [activeCategory, setActiveCategory] = useState<string>(() => sessionStorage.getItem('sf_activeCategory') || 'all');
-    const [exclude4K, setExclude4K] = useState<boolean>(() => localStorage.getItem('exclude_4k') === 'true');
+    const [qualityFilter, setQualityFilter] = useState<string>(() => sessionStorage.getItem('sf_qualityFilter') || 'all');
     const [kidsMode, setKidsMode] = useState<boolean>(() => localStorage.getItem('kids_mode') === 'true');
 
     // Modale de vérification PIN
@@ -45,6 +45,7 @@ export const Library: React.FC = () => {
     // Persister l'onglet et la catégorie pour survivre à la navigation
     useEffect(() => { sessionStorage.setItem('sf_activeTab', activeTab); }, [activeTab]);
     useEffect(() => { sessionStorage.setItem('sf_activeCategory', activeCategory); }, [activeCategory]);
+    useEffect(() => { sessionStorage.setItem('sf_qualityFilter', qualityFilter); }, [qualityFilter]);
 
     // Filtre des fichiers vidéo valides
     const isVideoFile = (filename: string) => {
@@ -61,6 +62,42 @@ export const Library: React.FC = () => {
 
     const saveCache = (newCache: Record<string, TMDBResult>) => {
         localStorage.setItem('tmdb_cache', JSON.stringify(newCache));
+    };
+
+    // Cache de la liste enrichie complète (affiches + métadonnées)
+    const ENRICHED_CACHE_KEY = 'sf_enriched_magnets';
+
+    const loadEnrichedCache = (): EnrichedMagnet[] | null => {
+        try {
+            const raw = localStorage.getItem(ENRICHED_CACHE_KEY);
+            if (!raw) return null;
+            const data = JSON.parse(raw);
+            // Vérifier la fraîcheur (expire après 1 heure)
+            if (data.timestamp && Date.now() - data.timestamp < 3600000) {
+                return data.magnets;
+            }
+            return null;
+        } catch {
+            return null;
+        }
+    };
+
+    const saveEnrichedCache = (items: EnrichedMagnet[]) => {
+        try {
+            // Ne stocker que les données essentielles (sans links qui sont volumineuses)
+            const slim = items.map(m => ({
+                ...m,
+                links: undefined,
+                groupedMagnets: m.groupedMagnets?.map(gm => ({ ...gm, links: undefined }))
+            }));
+            localStorage.setItem(ENRICHED_CACHE_KEY, JSON.stringify({
+                timestamp: Date.now(),
+                magnets: slim
+            }));
+        } catch (e) {
+            // localStorage plein : on ne plante pas l'app
+            console.warn('Impossible de sauvegarder le cache enrichi', e);
+        }
     };
 
     const loadContinueWatching = async () => {
@@ -208,10 +245,18 @@ export const Library: React.FC = () => {
             saveCache(cache);
         }
         setMagnets(newItems);
+        saveEnrichedCache(newItems);
         setMetadataLoading(false);
     };
 
     useEffect(() => {
+        // Charger le cache enrichi instantanément (affiches immédiates)
+        const cached = loadEnrichedCache();
+        if (cached && cached.length > 0) {
+            setMagnets(cached);
+            setLoading(false);
+        }
+        // Puis rafraîchir depuis l'API en arrière-plan
         fetchMagnets();
     }, [adApiKey, tmdbApiKey]);
 
@@ -278,10 +323,12 @@ export const Library: React.FC = () => {
         return magnets.filter(m => {
             const parsed = parseMagnetName(m.filename);
             
-            // 1. Filtrage 4K
-            if (exclude4K) {
-                const is4K = parsed.quality === '4K' || parsed.quality === '2160p' || m.filename.includes('2160p') || m.filename.toLowerCase().includes('4k');
-                if (is4K) return false;
+            // 1. Filtrage par qualité
+            if (qualityFilter !== 'all') {
+                const fileQuality = parsed.quality;
+                if (qualityFilter === '4k' && fileQuality !== '4K') return false;
+                if (qualityFilter === '1080p' && fileQuality !== '1080p') return false;
+                if (qualityFilter === 'other' && (fileQuality === '4K' || fileQuality === '1080p')) return false;
             }
 
             // 2. Filtrage Mode Enfants
@@ -316,7 +363,7 @@ export const Library: React.FC = () => {
 
             return matchesSearch && matchesTab;
         });
-    }, [magnets, searchQuery, activeTab, activeCategory, exclude4K, kidsMode]);
+    }, [magnets, searchQuery, activeTab, activeCategory, qualityFilter, kidsMode]);
 
     const handleMagnetClick = (magnet: EnrichedMagnet) => {
         navigate(`/view/${magnet.id}`, { state: { magnet } });
@@ -442,23 +489,30 @@ export const Library: React.FC = () => {
 
                 {/* Filtres & Toggles de Sécurité */}
                 <div className="flex items-center gap-2.5">
-                    {/* Toggle 4K */}
-                    <button
-                        onClick={() => {
-                            const next = !exclude4K;
-                            setExclude4K(next);
-                            localStorage.setItem('exclude_4k', next.toString());
-                        }}
-                        className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition-all flex items-center ${
-                            exclude4K 
-                            ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' 
-                            : 'bg-brand-900/60 border-white/5 text-gray-400 hover:text-white'
-                        }`}
-                        title="Masquer les fichiers vidéo en résolution 4K (2160p)"
-                    >
-                        <Icons.XCircle size={14} className="mr-1.5" />
-                        Masquer la 4K
-                    </button>
+                    {/* Filtres de Qualité */}
+                    <div className="flex items-center bg-brand-900/60 rounded-xl border border-white/5 p-0.5">
+                        {[
+                            { id: 'all', label: 'Tout' },
+                            { id: '4k', label: '4K' },
+                            { id: '1080p', label: '1080p' },
+                            { id: 'other', label: 'Autres' }
+                        ].map(q => (
+                            <button
+                                key={q.id}
+                                onClick={() => setQualityFilter(q.id)}
+                                className={`px-3 py-1.5 text-[10px] font-extrabold rounded-lg transition-all ${
+                                    qualityFilter === q.id
+                                    ? q.id === '4k' ? 'bg-purple-600 text-white shadow-sm' 
+                                      : q.id === '1080p' ? 'bg-blue-600 text-white shadow-sm'
+                                      : q.id === 'other' ? 'bg-gray-600 text-white shadow-sm'
+                                      : 'bg-white text-black shadow-sm'
+                                    : 'text-gray-400 hover:text-white'
+                                }`}
+                            >
+                                {q.label}
+                            </button>
+                        ))}
+                    </div>
 
                     {/* Toggle Mode Enfants */}
                     <button

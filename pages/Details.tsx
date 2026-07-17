@@ -186,6 +186,18 @@ export const Details: React.FC = () => {
 
     const videoExtensions = /\.(mkv|mp4|avi|mov|wmv|m4v|webm|flv|mpg|mpeg|3gp|m2ts|ts|vob)$/i;
 
+    // Lire le filtre de qualité global depuis sessionStorage
+    const qualityFilter = sessionStorage.getItem('sf_qualityFilter') || 'all';
+
+    const matchesQuality = (filename: string): boolean => {
+        if (qualityFilter === 'all') return true;
+        const parsed = parseMagnetName(filename);
+        if (qualityFilter === '4k') return parsed.quality === '4K';
+        if (qualityFilter === '1080p') return parsed.quality === '1080p';
+        if (qualityFilter === 'other') return parsed.quality !== '4K' && parsed.quality !== '1080p';
+        return true;
+    };
+
     // Trier et grouper les fichiers par saison pour les séries
     const seasons = useMemo(() => {
         const allFiles: { filename: string; link: string; magnetId: number; fileIndex: number; season: number; episode: number }[] = [];
@@ -196,7 +208,7 @@ export const Details: React.FC = () => {
         magnetsToProcess.forEach(m => {
             if (m.links) {
                 m.links.forEach((l, index) => {
-                    if (videoExtensions.test(l.filename)) {
+                    if (videoExtensions.test(l.filename) && matchesQuality(l.filename)) {
                         const parsed = parseMagnetName(l.filename);
                         allFiles.push({
                             filename: l.filename,
@@ -211,9 +223,18 @@ export const Details: React.FC = () => {
             }
         });
 
+        // Dédupliquer les épisodes identiques (même saison + même épisode) en gardant le premier trouvé
+        const seen = new Set<string>();
+        const uniqueFiles = allFiles.filter(f => {
+            const key = `s${f.season}e${f.episode}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+
         // Grouper par saison
-        const groups: Record<number, typeof allFiles> = {};
-        allFiles.forEach(f => {
+        const groups: Record<number, typeof uniqueFiles> = {};
+        uniqueFiles.forEach(f => {
             if (!groups[f.season]) {
                 groups[f.season] = [];
             }
@@ -237,15 +258,15 @@ export const Details: React.FC = () => {
         }
 
         return sorted;
-    }, [magnet, activeSeason]);
+    }, [magnet, activeSeason, qualityFilter]);
 
     // Fichiers à plat (pour le mode Film simple)
     const filesToShow = useMemo(() => {
         if (magnet.mediaType === 'tv') return [];
         return (magnet.links || [])
-            .filter(l => videoExtensions.test(l.filename))
+            .filter(l => videoExtensions.test(l.filename) && matchesQuality(l.filename))
             .sort((a, b) => a.filename.localeCompare(b.filename, undefined, { numeric: true, sensitivity: 'base' }));
-    }, [magnet]);
+    }, [magnet, qualityFilter]);
 
     const handlePlay = async (fileObj: { filename: string, link: string, magnetId: number, fileIndex: number }) => {
         if (!adApiKey) return;
