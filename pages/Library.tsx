@@ -21,6 +21,15 @@ export interface EnrichedMagnet extends Magnet {
     showName?: string;
 }
 
+// Regroupement d'une saga de films (ex: Superman, Mission Impossible...)
+export interface SagaGroup {
+    collectionId: number;
+    name: string;
+    posterPath?: string | null;
+    backdropPath?: string | null;
+    items: EnrichedMagnet[];
+}
+
 export const Library: React.FC = () => {
     const { adApiKey, tmdbApiKey, firebaseUser, savedPin } = useApp();
     const [magnets, setMagnets] = useState<EnrichedMagnet[]>([]);
@@ -30,6 +39,7 @@ export const Library: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [activeTab, setActiveTab] = useState<FilterType>(() => (sessionStorage.getItem('sf_activeTab') as FilterType) || 'movie');
+    const [activeSagaId, setActiveSagaId] = useState<number | null>(null);
     const navigate = useNavigate();
 
     // Filtres avancés
@@ -62,6 +72,13 @@ export const Library: React.FC = () => {
 
     const saveCache = (newCache: Record<string, TMDBResult>) => {
         localStorage.setItem('tmdb_cache', JSON.stringify(newCache));
+    };
+
+    // Génère la clé de cache TMDB pour un item (partagée entre fetch initial et enrichissement)
+    const getCacheKey = (item: { mediaType: 'movie' | 'tv'; filename: string; showName?: string }) => {
+        const parsed = parseMagnetName(item.filename);
+        const searchTitle = item.mediaType === 'tv' ? (item.showName || parsed.showName || parsed.title) : parsed.title;
+        return `${item.mediaType}_${searchTitle}_${parsed.year || ''}`.replace(/\s/g, '').toLowerCase();
     };
 
     // Cache de la liste enrichie complète (affiches + métadonnées)
@@ -122,17 +139,17 @@ export const Library: React.FC = () => {
         try {
             setLoading(true);
             const response = await AlldebridService.getMagnets(adApiKey);
-            
+
             if (response.status === 'success') {
                 const rawMagnets = response.data.magnets;
                 const overrides = StorageUtils.getOverrides();
-                
+
                 // 1. Filtrer pour ne garder que les torrents contenant au moins une vidéo
                 const videoMagnets = rawMagnets.filter(m => {
                     if (m.links && m.links.length > 0) {
                         return m.links.some(l => isVideoFile(l.filename));
                     }
-                    return true; 
+                    return true;
                 });
 
                 // 2. Parser le type et grouper par série
@@ -161,7 +178,7 @@ export const Library: React.FC = () => {
                     const sortedGroup = [...group].sort((a, b) => a.filename.localeCompare(b.filename, undefined, { numeric: true, sensitivity: 'base' }));
                     const first = sortedGroup[0];
                     const parsed = parseMagnetName(first.filename);
-                    
+
                     return {
                         ...first,
                         mediaType: 'tv',
@@ -172,13 +189,26 @@ export const Library: React.FC = () => {
                 });
 
                 const combinedList = [...movieMagnets, ...tvMagnets];
-                setMagnets(combinedList);
+
+                // Réinjecter immédiatement les métadonnées déjà en cache (affiches + collection/saga)
+                // pour éviter que les cartes affichent le fallback en attendant enrichWithMetadata.
+                const cache = loadCache();
+                const combinedListWithCache: EnrichedMagnet[] = combinedList.map(item => {
+                    const cacheKey = getCacheKey(item);
+                    const cached = cache[cacheKey];
+                    if (cached) {
+                        return { ...item, tmdbData: cached };
+                    }
+                    return item;
+                });
+
+                setMagnets(combinedListWithCache);
                 setError(null);
                 setLoading(false);
 
-                // 3. Charger les métadonnées de manière asynchrone
+                // 3. Charger les métadonnées manquantes de manière asynchrone
                 if (tmdbApiKey) {
-                    enrichWithMetadata(combinedList, tmdbApiKey);
+                    enrichWithMetadata(combinedListWithCache, tmdbApiKey);
                 }
 
             } else {
@@ -200,7 +230,7 @@ export const Library: React.FC = () => {
 
         for (let i = 0; i < newItems.length; i++) {
             const item = newItems[i];
-            
+
             // Chercher un override : d'abord par l'ID principal, puis par les IDs groupés (séries TV)
             let override = overrides[item.id];
             if (!override && item.groupedMagnets) {
@@ -215,21 +245,37 @@ export const Library: React.FC = () => {
             if (override && override.customTmdbData) {
                 newItems[i].tmdbData = override.customTmdbData;
                 if (override.type) newItems[i].mediaType = override.type;
-                continue; 
+                continue;
             }
 
-            const parsed = parseMagnetName(item.filename);
-            const searchTitle = item.mediaType === 'tv' ? (item.showName || parsed.showName || parsed.title) : parsed.title;
-            const cacheKey = `${item.mediaType}_${searchTitle}_${parsed.year || ''}`.replace(/\s/g, '').toLowerCase();
+            const cacheKey = getCacheKey(item);
 
-            if (cache[cacheKey]) {
-                newItems[i].tmdbData = cache[cacheKey];
+            // Si déjà présent en cache ET que la donnée contient déjà l'info de collection (ou n'est pas un film),
+            // on ne refait pas d'appel réseau.
+            const cachedEntry = cache[cacheKey];
+            const needsCollectionLookup = item.mediaType === 'movie' && cachedEntry && cachedEntry.belongs_to_collection === undefined;
+
+            if (cachedEntry && !needsCollectionLookup) {
+                newItems[i].tmdbData = cachedEntry;
             } else {
                 await new Promise(r => setTimeout(r, 150));
-                let result = await TMDBService.search(tmdbKey, searchTitle, item.mediaType, parsed.year);
-                
+                const parsed = parseMagnetName(item.filename);
+                const searchTitle = item.mediaType === 'tv' ? (item.showName || parsed.showName || parsed.title) : parsed.title;
+
+                let result = cachedEntry || await TMDBService.search(tmdbKey, searchTitle, item.mediaType, parsed.year);
+
                 if (!result && parsed.year && item.mediaType === 'movie') {
                     result = await TMDBService.search(tmdbKey, searchTitle, item.mediaType);
+                }
+
+                // Pour les films, on récupère les détails complets (dont belongs_to_collection = saga)
+                if (result && item.mediaType === 'movie') {
+                    const details = await TMDBService.getMovieDetails(tmdbKey, result.id);
+                    if (details) {
+                        result = { ...result, ...details };
+                    } else {
+                        result = { ...result, belongs_to_collection: null };
+                    }
                 }
 
                 if (result) {
@@ -322,7 +368,7 @@ export const Library: React.FC = () => {
     const filteredMagnets = useMemo(() => {
         return magnets.filter(m => {
             const parsed = parseMagnetName(m.filename);
-            
+
             // 1. Filtrage par qualité
             if (qualityFilter !== 'all') {
                 const fileQuality = parsed.quality;
@@ -339,15 +385,15 @@ export const Library: React.FC = () => {
             // 3. Filtrage Recherche
             const titleToCheck = m.tmdbData?.title || m.tmdbData?.name || m.showName || parsed.title;
             const matchesSearch = titleToCheck.toLowerCase().includes(searchQuery.toLowerCase()) || m.filename.toLowerCase().includes(searchQuery.toLowerCase());
-            
+
             // 4. Filtrage de l'onglet Films/Séries
             const matchesTab = activeTab === 'all' ? true : m.mediaType === activeTab;
-            
+
             // 5. Filtrage par Catégorie de genre (uniquement si Kids Mode inactif)
             if (!kidsMode && activeCategory !== 'all') {
                 const genreIds = m.tmdbData?.genre_ids || (m.tmdbData?.genres ? m.tmdbData.genres.map(g => g.id) : []);
                 let matchesCategory = false;
-                
+
                 if (activeCategory === 'action') {
                     matchesCategory = genreIds.some(id => [28, 12, 10759].includes(id));
                 } else if (activeCategory === 'comedy') {
@@ -357,13 +403,51 @@ export const Library: React.FC = () => {
                 } else if (activeCategory === 'kids') {
                     matchesCategory = genreIds.some(id => [10751, 10762].includes(id));
                 }
-                
+
                 if (!matchesCategory) return false;
+            }
+
+            // 6. Filtrage par Saga sélectionnée
+            if (activeSagaId !== null) {
+                if (m.tmdbData?.belongs_to_collection?.id !== activeSagaId) return false;
             }
 
             return matchesSearch && matchesTab;
         });
-    }, [magnets, searchQuery, activeTab, activeCategory, qualityFilter, kidsMode]);
+    }, [magnets, searchQuery, activeTab, activeCategory, qualityFilter, kidsMode, activeSagaId]);
+
+    // Regroupement des films appartenant à une même saga/collection TMDB (Superman, Mission Impossible...)
+    const sagaGroups = useMemo<SagaGroup[]>(() => {
+        const groups: Record<string, SagaGroup> = {};
+
+        magnets.forEach(m => {
+            if (m.mediaType !== 'movie') return;
+            const collection = m.tmdbData?.belongs_to_collection;
+            if (!collection) return;
+
+            const key = String(collection.id);
+            if (!groups[key]) {
+                groups[key] = {
+                    collectionId: collection.id,
+                    name: collection.name,
+                    posterPath: collection.poster_path,
+                    backdropPath: collection.backdrop_path,
+                    items: []
+                };
+            }
+            groups[key].items.push(m);
+        });
+
+        // On ne garde que les sagas comportant au moins 2 films présents dans la bibliothèque
+        return Object.values(groups)
+            .filter(g => g.items.length >= 2)
+            .sort((a, b) => b.items.length - a.items.length);
+    }, [magnets]);
+
+    const activeSaga = useMemo(
+        () => sagaGroups.find(g => g.collectionId === activeSagaId) || null,
+        [sagaGroups, activeSagaId]
+    );
 
     const handleMagnetClick = (magnet: EnrichedMagnet) => {
         navigate(`/view/${magnet.id}`, { state: { magnet } });
@@ -379,7 +463,7 @@ export const Library: React.FC = () => {
                     </div>
                     <h2 className="text-xl font-bold mb-2">Configuration requise</h2>
                     <p className="text-text-secondary mb-6 text-sm">Veuillez entrer votre clé API Alldebrid dans les paramètres pour commencer.</p>
-                    <button 
+                    <button
                         onClick={() => navigate('/settings')}
                         className="btn-primary w-full py-3.5"
                     >
@@ -392,28 +476,28 @@ export const Library: React.FC = () => {
 
     return (
         <div className="pb-24 pt-4 md:pt-8 px-4 md:px-8 max-w-7xl mx-auto min-h-screen">
-            
+
             {/* Section recherche & Onglets */}
             <div className="sticky top-0 z-40 bg-brand-900/95 backdrop-blur-md pt-2 pb-4 border-b border-white/5 mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <h1 className="text-3xl font-extrabold tracking-tight text-white hidden md:block">StreamFlow</h1>
-                
+
                 <div className="flex items-center gap-4 w-full md:w-auto">
                     {/* Onglets adaptatifs */}
                     <div className="flex bg-brand-800/60 p-1 rounded-xl flex-1 md:flex-initial">
-                        <button 
-                            onClick={() => setActiveTab('movie')}
+                        <button
+                            onClick={() => { setActiveTab('movie'); setActiveSagaId(null); }}
                             className={`flex-1 md:px-6 py-2 text-xs md:text-sm font-bold rounded-lg transition-all ${activeTab === 'movie' ? 'bg-brand-accent text-black shadow-md' : 'text-gray-400 hover:text-white'}`}
                         >
                             Films
                         </button>
-                        <button 
-                            onClick={() => setActiveTab('tv')}
+                        <button
+                            onClick={() => { setActiveTab('tv'); setActiveSagaId(null); }}
                             className={`flex-1 md:px-6 py-2 text-xs md:text-sm font-bold rounded-lg transition-all ${activeTab === 'tv' ? 'bg-brand-accent text-black shadow-md' : 'text-gray-400 hover:text-white'}`}
                         >
                             Séries
                         </button>
-                        <button 
-                            onClick={() => setActiveTab('all')}
+                        <button
+                            onClick={() => { setActiveTab('all'); setActiveSagaId(null); }}
                             className={`flex-1 md:px-6 py-2 text-xs md:text-sm font-bold rounded-lg transition-all ${activeTab === 'all' ? 'bg-brand-accent text-black shadow-md' : 'text-gray-400 hover:text-white'}`}
                         >
                             Tout
@@ -443,7 +527,7 @@ export const Library: React.FC = () => {
                         <Icons.AlertCircle className="mr-2 flex-shrink-0" size={16} />
                         <span><strong>Sécurité parentale :</strong> Aucun code PIN n'est configuré. N'importe qui peut désactiver le Mode Enfants.</span>
                     </div>
-                    <button 
+                    <button
                         onClick={() => navigate('/settings')}
                         className="text-brand-accent font-bold hover:underline ml-4 whitespace-nowrap"
                     >
@@ -454,7 +538,7 @@ export const Library: React.FC = () => {
 
             {/* BARRE DE FILTRES AVANCÉS & CATÉGORIES */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8 bg-brand-800/30 p-4 rounded-2xl border border-white/5 animate-fade-in">
-                
+
                 {/* Catégories (masqué si Kids Mode est actif car verrouillé) */}
                 <div className="flex items-center space-x-2 overflow-x-auto no-scrollbar py-1">
                     <span className="text-[10px] font-extrabold text-text-muted uppercase tracking-wider mr-2">Catégories :</span>
@@ -475,8 +559,8 @@ export const Library: React.FC = () => {
                                     key={cat.id}
                                     onClick={() => setActiveCategory(cat.id)}
                                     className={`px-3.5 py-1.5 text-xs font-bold rounded-xl transition-all whitespace-nowrap ${
-                                        activeCategory === cat.id 
-                                        ? 'bg-white text-black font-extrabold shadow-sm' 
+                                        activeCategory === cat.id
+                                        ? 'bg-white text-black font-extrabold shadow-sm'
                                         : 'bg-brand-900/60 text-gray-400 hover:text-white border border-white/5'
                                     }`}
                                 >
@@ -502,7 +586,7 @@ export const Library: React.FC = () => {
                                 onClick={() => setQualityFilter(q.id)}
                                 className={`px-3 py-1.5 text-[10px] font-extrabold rounded-lg transition-all ${
                                     qualityFilter === q.id
-                                    ? q.id === '4k' ? 'bg-purple-600 text-white shadow-sm' 
+                                    ? q.id === '4k' ? 'bg-purple-600 text-white shadow-sm'
                                       : q.id === '1080p' ? 'bg-blue-600 text-white shadow-sm'
                                       : q.id === 'other' ? 'bg-gray-600 text-white shadow-sm'
                                       : 'bg-white text-black shadow-sm'
@@ -518,8 +602,8 @@ export const Library: React.FC = () => {
                     <button
                         onClick={handleToggleKidsMode}
                         className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition-all flex items-center shadow-lg ${
-                            kidsMode 
-                            ? 'bg-green-600 border-green-500 text-white font-extrabold' 
+                            kidsMode
+                            ? 'bg-green-600 border-green-500 text-white font-extrabold'
                             : 'bg-brand-900/60 border-white/5 text-gray-400 hover:text-white'
                         }`}
                     >
@@ -545,10 +629,10 @@ export const Library: React.FC = () => {
                 </div>
             ) : (
                 <div className="animate-fade-in">
-                    
+
                     {/* Affiche Héro (uniquement si aucun filtre de recherche/catégorie n'est actif) */}
-                    {activeTab === 'movie' && searchQuery === '' && activeCategory === 'all' && !kidsMode && (
-                        <HeroBanner 
+                    {activeTab === 'movie' && searchQuery === '' && activeCategory === 'all' && !kidsMode && activeSagaId === null && (
+                        <HeroBanner
                             mediaItems={magnets.filter(m => m.mediaType === 'movie')}
                             onPlayClick={handleMagnetClick}
                             onDetailsClick={handleMagnetClick}
@@ -556,7 +640,7 @@ export const Library: React.FC = () => {
                     )}
 
                     {/* Section "Reprendre la lecture" */}
-                    {continueWatching.length > 0 && searchQuery === '' && (
+                    {continueWatching.length > 0 && searchQuery === '' && activeSagaId === null && (
                         <div className="mb-10">
                             <h2 className="text-lg md:text-xl font-extrabold text-white mb-4 tracking-wide flex items-center">
                                 <Icons.Play size={18} className="mr-2 text-brand-accent" fill="currentColor" />
@@ -566,7 +650,7 @@ export const Library: React.FC = () => {
                                 {continueWatching.map((item, idx) => {
                                     const poster = TMDBService.getImageUrl(item.tmdbData?.poster_path || item.tmdbData?.backdrop_path, 'w200');
                                     return (
-                                        <div 
+                                        <div
                                             key={idx}
                                             onClick={() => navigate(`/view/${item.magnetId}`, { state: { magnet: magnets.find(m => m.id === item.magnetId) } })}
                                             className="relative flex-none w-44 aspect-[2/3] bg-brand-800 rounded-xl overflow-hidden cursor-pointer shadow-lg transform transition-transform duration-300 hover:scale-[1.03] snap-start border border-white/5"
@@ -579,12 +663,12 @@ export const Library: React.FC = () => {
                                                 </div>
                                             )}
                                             <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent"></div>
-                                            
+
                                             <div className="absolute inset-x-0 bottom-0 p-3">
                                                 <p className="text-white text-xs font-bold truncate">{item.tmdbData?.title || item.tmdbData?.name || item.filename}</p>
                                                 <div className="w-full h-1 bg-white/20 rounded-full mt-2 overflow-hidden">
-                                                    <div 
-                                                        className="h-full bg-brand-accent rounded-full" 
+                                                    <div
+                                                        className="h-full bg-brand-accent rounded-full"
                                                         style={{ width: `${item.percentage}%` }}
                                                     ></div>
                                                 </div>
@@ -596,16 +680,73 @@ export const Library: React.FC = () => {
                         </div>
                     )}
 
+                    {/* Section "Sagas" (regroupement des films faisant partie d'une même collection TMDB) */}
+                    {activeTab === 'movie' && sagaGroups.length > 0 && searchQuery === '' && activeCategory === 'all' && !kidsMode && activeSagaId === null && (
+                        <div className="mb-10">
+                            <h2 className="text-lg md:text-xl font-extrabold text-white mb-4 tracking-wide flex items-center">
+                                <Icons.Film size={18} className="mr-2 text-brand-accent" />
+                                Sagas
+                            </h2>
+                            <div className="flex space-x-4 overflow-x-auto pb-4 no-scrollbar -mx-4 px-4 md:-mx-8 md:px-8 snap-x">
+                                {sagaGroups.map((saga) => {
+                                    const poster = TMDBService.getImageUrl(saga.posterPath || saga.backdropPath, 'w500');
+                                    return (
+                                        <div
+                                            key={saga.collectionId}
+                                            onClick={() => setActiveSagaId(saga.collectionId)}
+                                            className="group relative flex-none w-44 aspect-[2/3] bg-brand-800 rounded-xl overflow-hidden cursor-pointer shadow-lg transform transition-transform duration-300 hover:scale-[1.03] snap-start border border-white/5"
+                                        >
+                                            {poster ? (
+                                                <img src={poster} alt={saga.name} className="w-full h-full object-cover opacity-85 group-hover:opacity-100 transition-opacity" />
+                                            ) : (
+                                                <div className="w-full h-full bg-brand-700 flex items-center justify-center p-3 text-center text-xs font-bold">
+                                                    {saga.name}
+                                                </div>
+                                            )}
+                                            <div className="absolute inset-0 bg-gradient-to-t from-black via-black/45 to-transparent"></div>
+                                            <div className="absolute inset-x-0 bottom-0 p-3">
+                                                <p className="text-white text-xs font-bold truncate">{saga.name}</p>
+                                                <span className="text-[10px] text-brand-accent font-semibold">{saga.items.length} films</span>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Bandeau de retour lorsqu'une saga est sélectionnée */}
+                    {activeSaga && (
+                        <div className="flex items-center justify-between mb-6 bg-brand-800/40 border border-white/5 rounded-2xl px-4 py-3 animate-fade-in">
+                            <div className="flex items-center">
+                                <button
+                                    onClick={() => setActiveSagaId(null)}
+                                    className="mr-3 p-2 rounded-xl bg-brand-900/60 hover:bg-brand-900 text-gray-300 hover:text-white transition-colors"
+                                    aria-label="Retour"
+                                >
+                                    <Icons.Search size={14} />
+                                </button>
+                                <div>
+                                    <p className="text-xs text-text-muted uppercase tracking-wider font-bold">Saga</p>
+                                    <p className="text-white font-extrabold">{activeSaga.name}</p>
+                                </div>
+                            </div>
+                            <span className="text-xs text-text-secondary">{activeSaga.items.length} films</span>
+                        </div>
+                    )}
+
                     {/* Grille principale des médias */}
                     <div className="flex items-center justify-between mb-4">
                         <h2 className="text-lg md:text-xl font-extrabold text-white tracking-wide">
-                            {kidsMode 
-                                ? 'Bibliothèque Jeunesse' 
-                                : activeTab === 'movie' 
-                                    ? 'Tous les Films' 
-                                    : activeTab === 'tv' 
-                                        ? 'Toutes les Séries' 
-                                        : 'Tous les Fichiers'}
+                            {activeSaga
+                                ? activeSaga.name
+                                : kidsMode
+                                    ? 'Bibliothèque Jeunesse'
+                                    : activeTab === 'movie'
+                                        ? 'Tous les Films'
+                                        : activeTab === 'tv'
+                                            ? 'Toutes les Séries'
+                                            : 'Tous les Fichiers'}
                         </h2>
                         {metadataLoading && (
                             <span className="text-[10px] text-text-muted flex items-center">
@@ -626,11 +767,11 @@ export const Library: React.FC = () => {
                     ) : (
                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-6">
                             {filteredMagnets.map((item) => (
-                                <MagnetCard 
-                                    key={item.id} 
-                                    magnet={item} 
+                                <MagnetCard
+                                    key={item.id}
+                                    magnet={item}
                                     posterPath={item.tmdbData?.poster_path}
-                                    onClick={handleMagnetClick} 
+                                    onClick={handleMagnetClick}
                                 />
                             ))}
                         </div>
@@ -647,10 +788,10 @@ export const Library: React.FC = () => {
                         </div>
                         <h3 className="text-lg font-extrabold text-white mb-1">Contrôle Parental</h3>
                         <p className="text-text-secondary text-xs mb-5">Saisissez votre code PIN à 4 chiffres pour désactiver le Mode Enfants.</p>
-                        
+
                         <form onSubmit={handlePinSubmit} className="space-y-4">
-                            <input 
-                                type="password" 
+                            <input
+                                type="password"
                                 maxLength={4}
                                 placeholder="••••"
                                 value={pinInput}
@@ -661,20 +802,20 @@ export const Library: React.FC = () => {
                                 className={`w-28 bg-brand-900 border ${pinError ? 'border-red-500 focus:ring-red-500' : 'border-gray-700 focus:ring-brand-accent'} rounded-xl px-4 py-3 text-white text-center tracking-widest outline-none text-xl focus:ring-2`}
                                 autoFocus
                             />
-                            
+
                             {pinError && (
                                 <p className="text-red-400 text-xs font-bold animate-pulse">Code PIN incorrect.</p>
                             )}
 
                             <div className="flex gap-2 pt-2">
-                                <button 
+                                <button
                                     type="button"
                                     onClick={() => setIsPinModalOpen(false)}
                                     className="flex-1 py-2.5 bg-white/5 text-gray-300 rounded-xl text-xs font-bold hover:bg-white/10 transition-colors"
                                 >
                                     Annuler
                                 </button>
-                                <button 
+                                <button
                                     type="submit"
                                     disabled={pinInput.length !== 4}
                                     className="flex-1 py-2.5 bg-brand-accent text-black rounded-xl text-xs font-bold disabled:opacity-50 hover:bg-amber-600 transition-colors"
