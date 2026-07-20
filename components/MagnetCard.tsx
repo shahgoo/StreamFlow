@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Magnet } from '../types';
 import { Icons } from './Icon';
 import { TMDBService } from '../services/tmdb';
@@ -16,6 +16,7 @@ export const MagnetCard: React.FC<MagnetCardProps> = ({ magnet, posterPath, onCl
     const parsed = parseMagnetName(magnet.filename);
     const displayName = parsed.title;
     const isReady = magnet.statusCode === 4;
+    const [isFav, setIsFav] = useState(() => StorageUtils.isFavorite(magnet.id));
     
     // Gradient de fallback déterministe pour les torrents sans affiche TMDB
     const stringToColor = (str: string) => {
@@ -35,36 +36,53 @@ export const MagnetCard: React.FC<MagnetCardProps> = ({ magnet, posterPath, onCl
         return (magnet.links || []).filter(l => isVideoFile(l.filename));
     }, [magnet.links]);
 
-    // Récupérer les affiches des vidéos individuelles si pas d'affiche principale
+    // Récupérer les affiches des vidéos individuelles si pas d'affiche principale (avec try/catch pour éviter tout écran noir)
     const collagePosters = useMemo(() => {
-        if (posterUrl || videoFiles.length < 2) return [];
+        try {
+            if (posterUrl || videoFiles.length < 2) return [];
 
-        const cache = JSON.parse(localStorage.getItem('tmdb_cache') || '{}');
-        const posters: string[] = [];
+            const cacheStr = localStorage.getItem('tmdb_cache');
+            const cache = cacheStr ? JSON.parse(cacheStr) : {};
+            const posters: string[] = [];
 
-        for (const file of videoFiles) {
-            // Check override first
-            const override = StorageUtils.getFileOverride(magnet.id, file.filename);
-            if (override?.poster_path || override?.backdrop_path) {
-                const url = TMDBService.getImageUrl(override.poster_path || override.backdrop_path, 'w500');
-                if (url && !posters.includes(url)) posters.push(url);
-                continue;
+            for (const file of videoFiles) {
+                if (!file || !file.filename) continue;
+
+                // Check override first
+                const override = StorageUtils.getFileOverride(magnet.id, file.filename);
+                if (override?.poster_path || override?.backdrop_path) {
+                    const url = TMDBService.getImageUrl(override.poster_path || override.backdrop_path, 'w500');
+                    if (url && !posters.includes(url)) posters.push(url);
+                    continue;
+                }
+
+                // Check cache by parsed name
+                const p = parseMagnetName(file.filename);
+                const title = p?.title || '';
+                if (!title) continue;
+
+                const cacheKey = `movie_${title}_${p.year || ''}`.replace(/\s/g, '').toLowerCase();
+                const cached = cache[cacheKey];
+                if (cached && (cached.poster_path || cached.backdrop_path)) {
+                    const url = TMDBService.getImageUrl(cached.poster_path || cached.backdrop_path, 'w500');
+                    if (url && !posters.includes(url)) posters.push(url);
+                }
+
+                if (posters.length >= 4) break;
             }
 
-            // Check cache by parsed name
-            const p = parseMagnetName(file.filename);
-            const cacheKey = `movie_${p.title}_${p.year || ''}`.replace(/\s/g, '').toLowerCase();
-            const cached = cache[cacheKey];
-            if (cached && (cached.poster_path || cached.backdrop_path)) {
-                const url = TMDBService.getImageUrl(cached.poster_path || cached.backdrop_path, 'w500');
-                if (url && !posters.includes(url)) posters.push(url);
-            }
-
-            if (posters.length >= 4) break;
+            return posters;
+        } catch (e) {
+            console.error("Erreur collage posters:", e);
+            return [];
         }
-
-        return posters;
     }, [posterUrl, videoFiles, magnet.id]);
+
+    const handleFavoriteClick = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        const newState = StorageUtils.toggleFavorite(magnet.id);
+        setIsFav(newState);
+    };
 
     return (
         <div 
@@ -134,8 +152,20 @@ export const MagnetCard: React.FC<MagnetCardProps> = ({ magnet, posterPath, onCl
                 )}
             </div>
 
-            {/* Icone de Status (En haut à droite) */}
-            <div className="absolute top-2 right-2 z-10">
+            {/* Favoris & Icone de Status (En haut à droite) */}
+            <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5">
+                <button
+                    onClick={handleFavoriteClick}
+                    className={`p-2 rounded-xl shadow-md backdrop-blur-md transition-all duration-200 ${
+                        isFav 
+                        ? 'bg-red-500 text-white scale-110 shadow-red-500/50' 
+                        : 'bg-black/60 text-white/70 hover:text-red-400 hover:bg-black/80'
+                    }`}
+                    title={isFav ? "Retirer des favoris" : "Ajouter aux favoris"}
+                >
+                    <Icons.Heart size={12} fill={isFav ? "currentColor" : "none"} />
+                </button>
+
                 {isReady ? (
                     <div className="bg-brand-accent text-black p-2 rounded-xl shadow-md backdrop-blur-md transition-transform duration-300 group-hover:scale-110">
                         <Icons.Play size={12} fill="currentColor" />

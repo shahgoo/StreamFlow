@@ -22,7 +22,12 @@ import {
   Check,
   Volume2,
   VolumeX,
-  Edit3
+  Edit3,
+  Heart,
+  FolderPlus,
+  Plus,
+  Star,
+  Bookmark
 } from 'lucide-react';
 
 export const Icons = {
@@ -48,5 +53,10 @@ export const Icons = {
   Check,
   Volume2,
   VolumeX,
-  Edit3
+  Edit3,
+  Heart,
+  FolderPlus,
+  Plus,
+  Star,
+  Bookmark
 };

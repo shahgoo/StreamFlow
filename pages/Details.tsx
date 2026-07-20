@@ -349,7 +349,7 @@ export const Details: React.FC = () => {
                 // 2. Parse filename
                 const parsed = parseMagnetName(file.filename);
                 const searchTitle = parsed.title;
-                const cacheKey = `movie_${searchTitle}_${parsed.year || ''}`.replace(/\s/g, '').toLowerCase();
+                const cacheKey = `movie_${searchTitle || ''}_${parsed.year || ''}`.replace(/\s/g, '').toLowerCase();
 
                 if (cache[cacheKey]) {
                     newFileTmdb[file.filename] = cache[cacheKey];
