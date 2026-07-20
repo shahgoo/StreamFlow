@@ -682,60 +682,122 @@ export const Details: React.FC = () => {
                                          <p className="text-text-secondary text-sm">Aucun fichier vidéo trouvé.</p>
                                      </div>
                                  ) : (
-                                     <div className="space-y-3">
-                                         {filesToShow.map((file, idx) => {
-                                             const progressKey = `${magnet.id}_${idx}`;
-                                             const progress = historyList[progressKey];
-                                             return (
-                                                 <div 
-                                                     key={idx}
-                                                     className="bg-brand-900/60 hover:bg-brand-800 border border-white/5 rounded-2xl p-4 flex flex-col justify-between group transition-all"
-                                                 >
-                                                     <div className="flex items-center justify-between mb-3 min-w-0">
-                                                         <div className="min-w-0 mr-4 flex items-center">
-                                                             <Icons.Film size={18} className="text-brand-accent mr-3 flex-shrink-0" />
-                                                             <p className="text-sm font-semibold text-white truncate" title={file.filename}>
-                                                                 {file.filename}
-                                                             </p>
-                                                         </div>
-                                                         
-                                                         <button
-                                                             onClick={() => handlePlay({ filename: file.filename, link: file.link, magnetId: magnet.id, fileIndex: idx })}
-                                                             disabled={unlocking === file.link}
-                                                             className="flex-none flex items-center justify-center bg-white text-black h-10 w-20 rounded-xl hover:bg-brand-accent hover:scale-105 active:scale-95 transition-all disabled:opacity-50 font-bold text-xs"
-                                                         >
-                                                             {unlocking === file.link ? (
-                                                                 <Icons.RefreshCw className="animate-spin h-4 w-4" />
-                                                             ) : (
-                                                                 <>
-                                                                     <Icons.Play size={12} fill="currentColor" className="mr-1" />
-                                                                     Lire
-                                                                 </>
-                                                             )}
-                                                         </button>
-                                                     </div>
+                                      <div className="space-y-3">
+                                          {filesToShow.map((file, idx) => {
+                                              const progressKey = `${magnet.id}_${idx}`;
+                                              const progress = historyList[progressKey];
+                                              const fileTmdb = fileTmdbData[file.filename];
+                                              const parsedFile = parseMagnetName(file.filename);
+                                              const filePoster = TMDBService.getImageUrl(fileTmdb?.poster_path || fileTmdb?.backdrop_path, 'w500');
+                                              const fileTitle = fileTmdb?.title || fileTmdb?.name || parsedFile.title;
+                                              const fileYear = parsedFile.year || (fileTmdb?.release_date || fileTmdb?.first_air_date)?.substring(0, 4);
 
-                                                     {/* Barre de progression si déjà commencé */}
-                                                     {progress && (
-                                                         <div className="w-full">
-                                                             <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden">
-                                                                 <div className="h-full bg-brand-accent" style={{ width: `${progress.percentage}%` }}></div>
-                                                             </div>
-                                                             <div className="flex justify-between text-[9px] text-text-secondary mt-1">
-                                                                 <span>Reprendre à {Math.floor(progress.currentTime / 60)} min</span>
-                                                                 <span>{progress.percentage.toFixed(0)}% vu</span>
-                                                             </div>
-                                                         </div>
-                                                     )}
-                                                 </div>
-                                             );
-                                         })}
-                                     </div>
-                                 )}
-                             </div>
-                         )}
-                     </div>
+                                              return (
+                                                  <div 
+                                                      key={idx}
+                                                      className="bg-brand-900/60 hover:bg-brand-800 border border-white/5 rounded-2xl overflow-hidden group transition-all"
+                                                  >
+                                                      <div className="flex">
+                                                          {/* Vignette du film */}
+                                                          <div className="relative flex-none w-24 sm:w-32 aspect-[2/3] bg-brand-800">
+                                                              {filePoster ? (
+                                                                  <img src={filePoster} alt={fileTitle} className="w-full h-full object-cover" />
+                                                              ) : (
+                                                                  <div className="w-full h-full flex items-center justify-center">
+                                                                      <Icons.Film size={24} className="text-text-muted" />
+                                                                  </div>
+                                                              )}
+                                                              <button
+                                                                  onClick={() => handlePlay({ filename: file.filename, link: file.link, magnetId: magnet.id, fileIndex: idx })}
+                                                                  disabled={unlocking === file.link}
+                                                                  className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                              >
+                                                                  {unlocking === file.link ? (
+                                                                      <Icons.RefreshCw className="animate-spin h-8 w-8 text-white" />
+                                                                  ) : (
+                                                                      <div className="bg-white/90 rounded-full p-2.5 shadow-lg">
+                                                                          <Icons.Play size={18} fill="black" className="ml-0.5 text-black" />
+                                                                      </div>
+                                                                  )}
+                                                              </button>
+                                                              {/* Barre de progression si déjà commencé */}
+                                                              {progress && (
+                                                                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/40">
+                                                                      <div className="h-full bg-brand-accent" style={{ width: `${progress.percentage}%` }}></div>
+                                                                  </div>
+                                                              )}
+                                                          </div>
 
+                                                          {/* Infos du film */}
+                                                          <div className="flex-1 p-3.5 min-w-0 flex flex-col justify-between">
+                                                              <div>
+                                                                  <div className="flex items-center justify-between gap-2 mb-1">
+                                                                      <span className="text-[10px] font-extrabold text-brand-accent uppercase tracking-wider block">
+                                                                          {fileYear ? `Film (${fileYear})` : 'Film'}
+                                                                          {fileTmdb?.vote_average ? ` · ★ ${fileTmdb.vote_average.toFixed(1)}` : ''}
+                                                                      </span>
+                                                                      
+                                                                      {/* Bouton d'édition des infos TMDB de ce fichier */}
+                                                                      <button
+                                                                          onClick={() => {
+                                                                              setEditingFile(file.filename);
+                                                                              setSearchQuery(parsedFile.title);
+                                                                              setEditType('movie');
+                                                                              setSelectedTmdb(fileTmdb || null);
+                                                                              setSearchResults([]);
+                                                                              setIsEditModalOpen(true);
+                                                                          }}
+                                                                          className="text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all border border-white/10"
+                                                                          title="Modifier l'association TMDB de ce fichier"
+                                                                      >
+                                                                          <Icons.Edit3 size={12} className="text-brand-accent" />
+                                                                          <span>Changer TMDB</span>
+                                                                      </button>
+                                                                  </div>
+
+                                                                  <h4 className="text-sm font-bold text-white truncate mb-1" title={fileTitle}>
+                                                                      {fileTitle}
+                                                                  </h4>
+
+                                                                  {fileTmdb?.overview ? (
+                                                                      <p className="text-[11px] text-text-secondary leading-relaxed line-clamp-2 mb-2">
+                                                                          {fileTmdb.overview}
+                                                                      </p>
+                                                                  ) : (
+                                                                      <p className="text-[10px] text-text-muted truncate mb-2">{file.filename}</p>
+                                                                  )}
+                                                              </div>
+
+                                                              <div className="flex items-center justify-between pt-2 border-t border-white/5 gap-2">
+                                                                  <span className="text-[10px] text-text-muted truncate flex-1" title={file.filename}>
+                                                                      {file.filename}
+                                                                  </span>
+                                                                  
+                                                                  <button
+                                                                      onClick={() => handlePlay({ filename: file.filename, link: file.link, magnetId: magnet.id, fileIndex: idx })}
+                                                                      disabled={unlocking === file.link}
+                                                                      className="flex-none flex items-center justify-center bg-white text-black font-bold text-xs px-3.5 py-1.5 rounded-xl hover:bg-brand-accent hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
+                                                                  >
+                                                                      {unlocking === file.link ? (
+                                                                          <Icons.RefreshCw className="animate-spin h-3.5 w-3.5" />
+                                                                      ) : (
+                                                                          <>
+                                                                              <Icons.Play size={12} fill="currentColor" className="mr-1" />
+                                                                              Lire
+                                                                          </>
+                                                                      )}
+                                                                  </button>
+                                                              </div>
+                                                          </div>
+                                                      </div>
+                                                  </div>
+                                              );
+                                          })}
+                                      </div>
+                                  )}
+                              </div>
+                                  )}
+                              </div>
                      {/* Films ou Séries Similaires */}
                      {similarMedias.length > 0 && (
                          <div>
