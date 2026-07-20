@@ -205,27 +205,37 @@ export const Library: React.FC = () => {
                 console.warn("Could not fetch saved links", e);
             }
 
-            if (magnetsRes.status === 'success') {
-                let allItems: EnrichedMagnet[] = magnetsRes.data.magnets.map(m => {
-                    const parsed = parseMagnetName(m.filename);
+            if (magnetsRes && magnetsRes.status === 'success') {
+                const rawMagnets = magnetsRes.data?.magnets;
+                const magnetsArray: any[] = Array.isArray(rawMagnets)
+                    ? rawMagnets
+                    : (rawMagnets && typeof rawMagnets === 'object' ? Object.values(rawMagnets) : []);
+
+                let allItems: EnrichedMagnet[] = magnetsArray.map(m => {
+                    const parsed = parseMagnetName(m.filename || '');
                     return { ...m, mediaType: parsed.type, showName: parsed.showName };
                 });
 
                 // Fusionner les Saved Links qui ne font pas partie des Magnets
-                if (savedLinksRes.status === 'success' && savedLinksRes.data.links) {
-                    const existingFilenames = new Set(allItems.map(m => m.filename.toLowerCase()));
+                const rawLinks = savedLinksRes?.data?.links;
+                const linksArray: any[] = Array.isArray(rawLinks)
+                    ? rawLinks
+                    : (rawLinks && typeof rawLinks === 'object' ? Object.values(rawLinks) : []);
+
+                if (savedLinksRes && savedLinksRes.status === 'success' && linksArray.length > 0) {
+                    const existingFilenames = new Set(allItems.map(m => (m.filename || '').toLowerCase()));
                     
-                    savedLinksRes.data.links.forEach(link => {
-                        if (isVideoFile(link.filename) && !existingFilenames.has(link.filename.toLowerCase())) {
+                    linksArray.forEach(link => {
+                        if (link && link.filename && isVideoFile(link.filename) && !existingFilenames.has(link.filename.toLowerCase())) {
                             const parsed = parseMagnetName(link.filename);
                             allItems.push({
-                                id: link.id,
+                                id: link.id || Math.floor(Math.random() * 1000000),
                                 filename: link.filename,
-                                size: link.size,
-                                hash: link.id.toString(),
+                                size: link.size || 0,
+                                hash: (link.id || '').toString(),
                                 status: 'Ready',
                                 statusCode: 4,
-                                downloaded: link.size,
+                                downloaded: link.size || 0,
                                 uploaded: 0,
                                 seeders: 0,
                                 downloadSpeed: 0,
@@ -274,8 +284,9 @@ export const Library: React.FC = () => {
             } else {
                 setError("Impossible de charger la bibliothèque");
             }
-        } catch (e) {
-            setError("Erreur de connexion");
+        } catch (e: any) {
+            console.error("Erreur détaillée fetchLibrary:", e);
+            setError(e?.message || "Erreur de connexion");
         } finally {
             if (!silent) setLoading(false);
             setIsRefreshing(false);
