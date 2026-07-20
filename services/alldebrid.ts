@@ -1,4 +1,4 @@
-import { ADResponse, MagnetsResponse, UnlockResponse } from '../types';
+import { ADResponse, MagnetsResponse, UnlockResponse, SavedLinksResponse } from '../types';
 
 const BASE_URL = 'https://api.alldebrid.com/v4.1';
 const AGENT = 'StreamFlowApp';
@@ -83,6 +83,24 @@ export const AlldebridService = {
         });
         const response = await fetch(`${BASE_URL}/magnet/delete?${params.toString()}`);
         return await response.json();
+    },
+
+    /**
+     * Fetch saved links from the user's account (debridded files)
+     */
+    getSavedLinks: async (apiKey: string): Promise<ADResponse<SavedLinksResponse>> => {
+        try {
+            const params = new URLSearchParams({
+                agent: AGENT,
+                apikey: apiKey,
+            });
+            const response = await fetch(`${BASE_URL}/user/links?${params.toString()}`);
+            const data = await response.json();
+            return data;
+        } catch (error) {
+            console.error("Failed to fetch saved links", error);
+            throw error;
+        }
     },
 
     /**

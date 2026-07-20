@@ -33,6 +33,18 @@ export interface MagnetsResponse {
     magnets: Magnet[];
 }
 
+export interface SavedLink {
+    link: string;
+    filename: string;
+    size: number;
+    date: number;
+    host: string;
+}
+
+export interface SavedLinksResponse {
+    links: SavedLink[];
+}
+
 export interface UnlockResponse {
     link: string;
     host: string;

@@ -142,10 +142,15 @@ export const Library: React.FC = () => {
         try {
             if (!silent) setLoading(true);
             if (silent) setIsRefreshing(true);
-            const response = await AlldebridService.getMagnets(adApiKey);
 
-            if (response.status === 'success') {
-                const rawMagnets = response.data.magnets;
+            // Récupérer les magnets ET les saved links en parallèle
+            const [magnetResponse, linksResponse] = await Promise.all([
+                AlldebridService.getMagnets(adApiKey),
+                AlldebridService.getSavedLinks(adApiKey).catch(() => null)
+            ]);
+
+            if (magnetResponse.status === 'success') {
+                const rawMagnets = magnetResponse.data.magnets;
                 const overrides = StorageUtils.getOverrides();
 
                 // 1. Filtrer pour ne garder que les torrents contenant au moins une vidéo
@@ -156,7 +161,48 @@ export const Library: React.FC = () => {
                     return true;
                 });
 
-                // 2. Parser le type et grouper par série
+                // Collecter tous les noms de fichiers déjà présents dans les magnets (pour dédoublonnage)
+                const magnetFilenames = new Set<string>();
+                videoMagnets.forEach(m => {
+                    magnetFilenames.add(m.filename.toLowerCase());
+                    if (m.links) {
+                        m.links.forEach(l => magnetFilenames.add(l.filename.toLowerCase()));
+                    }
+                });
+
+                // 2. Convertir les saved links vidéo en magnets virtuels (avec dédoublonnage)
+                if (linksResponse?.status === 'success' && linksResponse.data?.links) {
+                    const savedLinks = linksResponse.data.links;
+                    let virtualId = -1;
+
+                    savedLinks.forEach(sl => {
+                        if (!sl.filename || !isVideoFile(sl.filename)) return;
+                        // Dédoublonner : si le fichier existe déjà dans les magnets, on l'ignore
+                        if (magnetFilenames.has(sl.filename.toLowerCase())) return;
+                        magnetFilenames.add(sl.filename.toLowerCase());
+
+                        // Créer un magnet virtuel à partir du saved link
+                        const virtualMagnet: Magnet = {
+                            id: virtualId--,
+                            filename: sl.filename,
+                            size: sl.size || 0,
+                            hash: '',
+                            status: 'Ready' as const,
+                            statusCode: 4,
+                            downloaded: sl.size || 0,
+                            uploaded: 0,
+                            seeders: 0,
+                            downloadSpeed: 0,
+                            uploadSpeed: 0,
+                            uploadDate: sl.date || 0,
+                            completionDate: sl.date || 0,
+                            links: [{ filename: sl.filename, link: sl.link }]
+                        };
+                        videoMagnets.push(virtualMagnet);
+                    });
+                }
+
+                // 3. Parser le type et grouper par série
                 const movieMagnets: EnrichedMagnet[] = [];
                 const tvGroups: Record<string, Magnet[]> = {};
 
@@ -210,13 +256,13 @@ export const Library: React.FC = () => {
                 setError(null);
                 setLoading(false);
 
-                // 3. Charger les métadonnées manquantes de manière asynchrone
+                // 4. Charger les métadonnées manquantes de manière asynchrone
                 if (tmdbApiKey) {
                     enrichWithMetadata(combinedListWithCache, tmdbApiKey);
                 }
 
             } else {
-                setError(response.error?.message || "Erreur de chargement d'Alldebrid");
+                setError(magnetResponse.error?.message || "Erreur de chargement d'Alldebrid");
                 if (!silent) setLoading(false);
             }
         } catch (e) {
