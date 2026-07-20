@@ -462,6 +462,16 @@ export const Details: React.FC = () => {
     const title = details?.title || details?.name || magnet.showName || parsed.title;
     const releaseYear = parsed.year || (details?.release_date || details?.first_air_date)?.substring(0, 4);
 
+    const fileCollagePosters = useMemo(() => {
+        if (posterUrl) return [];
+        return filesToShow
+            .map(f => {
+                const tmdb = fileTmdbData[f.filename];
+                return TMDBService.getImageUrl(tmdb?.poster_path || tmdb?.backdrop_path, 'w500');
+            })
+            .filter(Boolean) as string[];
+    }, [posterUrl, filesToShow, fileTmdbData]);
+
     return (
         <div className="min-h-screen bg-brand-900 pb-24 animate-fade-in">
              
@@ -476,6 +486,15 @@ export const Details: React.FC = () => {
                          className="absolute inset-0 w-full h-full object-cover opacity-35"
                          alt="Backdrop"
                      />
+                 ) : fileCollagePosters.length >= 1 ? (
+                     <div className="absolute inset-0 w-full h-full opacity-45">
+                         <SagaCollagePoster
+                             posters={fileCollagePosters}
+                             count={filesToShow.length}
+                             title={title}
+                             showBadge={false}
+                         />
+                     </div>
                  ) : (
                       <div className="absolute inset-0 bg-gradient-to-br from-brand-800 to-brand-900">
                           <div className="w-full h-full flex items-center justify-center text-white/5 text-9xl font-black select-none">

@@ -16,6 +16,12 @@ export interface ParsedMedia {
     showName?: string; // Nom de la série sans saison/épisode pour le regroupement
 }
 
+export const videoExtensions = /\.(mkv|mp4|avi|mov|wmv|m4v|webm|flv|mpg|mpeg|3gp|m2ts|ts)$/i;
+
+export const isVideoFile = (filename: string): boolean => {
+    return videoExtensions.test(filename);
+};
+
 export const parseMagnetName = (filename: string): ParsedMedia => {
     let cleanName = filename;
 

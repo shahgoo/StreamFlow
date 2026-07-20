@@ -1,8 +1,10 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Magnet } from '../types';
 import { Icons } from './Icon';
 import { TMDBService } from '../services/tmdb';
-import { parseMagnetName } from '../utils/filename';
+import { parseMagnetName, isVideoFile } from '../utils/filename';
+import { StorageUtils } from '../utils/storage';
+import { SagaCollagePoster } from './SagaCollagePoster';
 
 interface MagnetCardProps {
     magnet: Magnet;
@@ -28,12 +30,48 @@ export const MagnetCard: React.FC<MagnetCardProps> = ({ magnet, posterPath, onCl
     const fallbackGradient = `linear-gradient(135deg, ${stringToColor(magnet.filename)}80 0%, #06080F 100%)`;
     const posterUrl = TMDBService.getImageUrl(posterPath, 'w500');
 
+    // Fichiers vidéo contenus dans le magnet
+    const videoFiles = useMemo(() => {
+        return (magnet.links || []).filter(l => isVideoFile(l.filename));
+    }, [magnet.links]);
+
+    // Récupérer les affiches des vidéos individuelles si pas d'affiche principale
+    const collagePosters = useMemo(() => {
+        if (posterUrl || videoFiles.length < 2) return [];
+
+        const cache = JSON.parse(localStorage.getItem('tmdb_cache') || '{}');
+        const posters: string[] = [];
+
+        for (const file of videoFiles) {
+            // Check override first
+            const override = StorageUtils.getFileOverride(magnet.id, file.filename);
+            if (override?.poster_path || override?.backdrop_path) {
+                const url = TMDBService.getImageUrl(override.poster_path || override.backdrop_path, 'w500');
+                if (url && !posters.includes(url)) posters.push(url);
+                continue;
+            }
+
+            // Check cache by parsed name
+            const p = parseMagnetName(file.filename);
+            const cacheKey = `movie_${p.title}_${p.year || ''}`.replace(/\s/g, '').toLowerCase();
+            const cached = cache[cacheKey];
+            if (cached && (cached.poster_path || cached.backdrop_path)) {
+                const url = TMDBService.getImageUrl(cached.poster_path || cached.backdrop_path, 'w500');
+                if (url && !posters.includes(url)) posters.push(url);
+            }
+
+            if (posters.length >= 4) break;
+        }
+
+        return posters;
+    }, [posterUrl, videoFiles, magnet.id]);
+
     return (
         <div 
             onClick={() => onClick(magnet)}
             className="group relative bg-brand-800 rounded-2xl overflow-hidden shadow-lg cursor-pointer transform transition-all duration-300 hover:scale-105 hover:shadow-glow-accent-lg hover:ring-2 hover:ring-brand-accent/70 aspect-[2/3] animate-fade-in"
         >
-            {/* Affiche de fond ou dégradé de fallback */}
+            {/* Affiche de fond, Collage de saga ou dégradé de fallback */}
             {posterUrl ? (
                 <div className="absolute inset-0 w-full h-full bg-brand-900">
                      <img 
@@ -44,6 +82,13 @@ export const MagnetCard: React.FC<MagnetCardProps> = ({ magnet, posterPath, onCl
                      />
                      <div className="absolute inset-0 bg-gradient-to-t from-black via-black/35 to-transparent"></div>
                 </div>
+            ) : collagePosters.length >= 2 ? (
+                <SagaCollagePoster
+                    posters={collagePosters}
+                    count={videoFiles.length}
+                    title={displayName}
+                    showBadge={false}
+                />
             ) : (
                 <div 
                     className="absolute inset-0 w-full h-full bg-cover bg-center transition-all duration-500 group-hover:scale-105 opacity-85 group-hover:opacity-100"
@@ -65,8 +110,13 @@ export const MagnetCard: React.FC<MagnetCardProps> = ({ magnet, posterPath, onCl
                 </div>
             )}
 
-            {/* Badges de Qualité (En haut à gauche) */}
+            {/* Badges de Qualité ou de Nombre de Vidéos */}
             <div className="absolute top-2 left-2 z-10 flex flex-wrap gap-1 max-w-[70%]">
+                {videoFiles.length > 1 && (
+                    <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-brand-accent text-black uppercase tracking-wider shadow-md">
+                        {videoFiles.length} vidéo{videoFiles.length > 1 ? 's' : ''}
+                    </span>
+                )}
                 {parsed.quality && (
                     <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-md text-white border border-white/10 uppercase tracking-wider">
                         {parsed.quality}

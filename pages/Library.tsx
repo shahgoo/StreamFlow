@@ -3,6 +3,7 @@ import { AlldebridService } from '../services/alldebrid';
 import { TMDBService, TMDBResult } from '../services/tmdb';
 import { Magnet } from '../types';
 import { MagnetCard } from '../components/MagnetCard';
+import { SagaCollagePoster } from '../components/SagaCollagePoster';
 import { SkeletonCard } from '../components/SkeletonCard';
 import { HeroBanner } from '../components/HeroBanner';
 import { Icons } from '../components/Icon';
@@ -808,6 +809,10 @@ export const Library: React.FC = () => {
                             <div className="flex space-x-4 overflow-x-auto pb-4 no-scrollbar -mx-4 px-4 md:-mx-8 md:px-8 snap-x">
                                 {sagaGroups.map((saga) => {
                                     const poster = TMDBService.getImageUrl(saga.posterPath || saga.backdropPath, 'w500');
+                                    const sagaPosters = saga.items
+                                        .map(item => TMDBService.getImageUrl(item.tmdbData?.poster_path || item.tmdbData?.backdrop_path, 'w500'))
+                                        .filter(Boolean) as string[];
+
                                     return (
                                         <div
                                             key={saga.collectionId}
@@ -817,12 +822,15 @@ export const Library: React.FC = () => {
                                             {poster ? (
                                                 <img src={poster} alt={saga.name} className="w-full h-full object-cover opacity-85 group-hover:opacity-100 transition-opacity" />
                                             ) : (
-                                                <div className="w-full h-full bg-brand-700 flex items-center justify-center p-3 text-center text-xs font-bold">
-                                                    {saga.name}
-                                                </div>
+                                                <SagaCollagePoster
+                                                    posters={sagaPosters}
+                                                    count={saga.items.length}
+                                                    title={saga.name}
+                                                    showBadge={false}
+                                                />
                                             )}
                                             <div className="absolute inset-0 bg-gradient-to-t from-black via-black/45 to-transparent"></div>
-                                            <div className="absolute inset-x-0 bottom-0 p-3">
+                                            <div className="absolute inset-x-0 bottom-0 p-3 z-10">
                                                 <p className="text-white text-xs font-bold truncate">{saga.name}</p>
                                                 <span className="text-[10px] text-brand-accent font-semibold">{saga.items.length} films</span>
                                             </div>
