@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useApp } from '../contexts/AppContext';
 import { EnrichedMagnet, TMDBResult } from '../types';
 import { AlldebridService } from '../services/alldebrid';
 import { TMDBService } from '../services/tmdb';
@@ -85,8 +86,9 @@ export const Library: React.FC = () => {
         sessionStorage.setItem('sf_qualityFilter', filter);
     };
 
-    const adApiKey = localStorage.getItem('ad_api_key');
-    const tmdbApiKey = localStorage.getItem('tmdb_api_key');
+    const { adApiKey: contextAdKey, tmdbApiKey: contextTmdbKey } = useApp();
+    const adApiKey = contextAdKey || localStorage.getItem('ad_apikey') || localStorage.getItem('ad_api_key') || '';
+    const tmdbApiKey = contextTmdbKey || localStorage.getItem('tmdb_apikey') || localStorage.getItem('tmdb_api_key') || '';
 
     const loadCache = (): Record<string, TMDBResult> => {
         try {
