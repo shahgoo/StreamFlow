@@ -301,23 +301,40 @@ export const Library: React.FC = () => {
             }
 
             const cacheKey = getCacheKey(item);
-
-            // Si déjà présent en cache ET que la donnée contient déjà l'info de collection (ou n'est pas un film),
-            // on ne refait pas d'appel réseau.
             const cachedEntry = cache[cacheKey];
+
+            // Ne pas re-rechercher les éléments explicitement non trouvés
+            if (cachedEntry && (cachedEntry as any).notFound) {
+                continue;
+            }
+
             const needsCollectionLookup = item.mediaType === 'movie' && cachedEntry && cachedEntry.belongs_to_collection === undefined;
 
             if (cachedEntry && !needsCollectionLookup) {
                 newItems[i].tmdbData = cachedEntry;
             } else {
-                await new Promise(r => setTimeout(r, 150));
+                await new Promise(r => setTimeout(r, 120));
                 const parsed = parseMagnetName(item.filename);
                 const searchTitle = item.mediaType === 'tv' ? (item.showName || parsed.showName || parsed.title) : parsed.title;
 
-                let result = cachedEntry || await TMDBService.search(tmdbKey, searchTitle, item.mediaType, parsed.year);
+                let result = (cachedEntry && !needsCollectionLookup) ? cachedEntry : await TMDBService.search(tmdbKey, searchTitle, item.mediaType, parsed.year);
 
                 if (!result && parsed.year && item.mediaType === 'movie') {
                     result = await TMDBService.search(tmdbKey, searchTitle, item.mediaType);
+                }
+
+                // Fallback pour les packs/collections de films : essayer avec le titre du premier fichier vidéo
+                if (!result && item.mediaType === 'movie' && item.links && item.links.length > 0) {
+                    const firstVideo = item.links.find(l => isVideoFile(l.filename));
+                    if (firstVideo) {
+                        const parsedFile = parseMagnetName(firstVideo.filename);
+                        if (parsedFile.title && parsedFile.title.toLowerCase() !== searchTitle.toLowerCase()) {
+                            result = await TMDBService.search(tmdbKey, parsedFile.title, 'movie', parsedFile.year);
+                            if (!result && parsedFile.year) {
+                                result = await TMDBService.search(tmdbKey, parsedFile.title, 'movie');
+                            }
+                        }
+                    }
                 }
 
                 // Pour les films, on récupère les détails complets (dont belongs_to_collection = saga)
@@ -334,7 +351,14 @@ export const Library: React.FC = () => {
                     newItems[i].tmdbData = result;
                     cache[cacheKey] = result;
                     cacheUpdated = true;
-                    if (i % 2 === 0) setMagnets([...newItems]);
+                } else {
+                    // Mettre en cache négatif pour éviter les requêtes infinies à chaque rechargement
+                    cache[cacheKey] = { id: 0, notFound: true } as any;
+                    cacheUpdated = true;
+                }
+
+                if (i % 2 === 0 || i === newItems.length - 1) {
+                    setMagnets([...newItems]);
                 }
             }
         }
