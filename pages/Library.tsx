@@ -87,8 +87,8 @@ export const Library: React.FC = () => {
     };
 
     const { adApiKey: contextAdKey, tmdbApiKey: contextTmdbKey } = useApp();
-    const adApiKey = contextAdKey || localStorage.getItem('ad_apikey') || localStorage.getItem('ad_api_key') || '';
-    const tmdbApiKey = contextTmdbKey || localStorage.getItem('tmdb_apikey') || localStorage.getItem('tmdb_api_key') || '';
+    const adApiKey = (contextAdKey || localStorage.getItem('ad_apikey') || localStorage.getItem('ad_api_key') || '').trim();
+    const tmdbApiKey = (contextTmdbKey || localStorage.getItem('tmdb_apikey') || localStorage.getItem('tmdb_api_key') || '').trim();
 
     const loadCache = (): Record<string, TMDBResult> => {
         try {
@@ -395,8 +395,9 @@ export const Library: React.FC = () => {
             }
 
             // 2. Filtrage par Onglet
-            if (activeTab === 'movie' && m.mediaType !== 'movie') return false;
-            if (activeTab === 'tv' && m.mediaType !== 'tv') return false;
+            const effectiveMediaType = m.mediaType || (m.tmdbData?.title ? 'movie' : (m.tmdbData?.name ? 'tv' : 'movie'));
+            if (activeTab === 'movie' && effectiveMediaType !== 'movie') return false;
+            if (activeTab === 'tv' && effectiveMediaType !== 'tv') return false;
             if (activeTab === 'favorites' && !StorageUtils.isFavorite(m.id)) return false;
 
             // 3. Mode Enfants
@@ -502,18 +503,29 @@ export const Library: React.FC = () => {
         navigate(`/view/${magnet.id}`, { state: { magnet } });
     };
 
-    if (error === "Clé API manquante") {
+    if (error) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-[80vh] px-4 text-center">
-                <div className="bg-brand-800 p-8 rounded-3xl shadow-xl max-w-sm w-full border border-white/5">
-                    <div className="w-16 h-16 rounded-full bg-brand-accent/10 flex items-center justify-center mx-auto mb-4">
-                        <Icons.Settings className="w-8 h-8 text-brand-accent animate-spin-slow" />
+            <div className="flex flex-col items-center justify-center min-h-[70vh] px-4 text-center">
+                <div className="bg-brand-800 p-8 rounded-3xl shadow-xl max-w-md w-full border border-white/5">
+                    <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mx-auto mb-4 border border-red-500/20">
+                        <Icons.AlertCircle className="w-8 h-8 text-red-400" />
                     </div>
-                    <h2 className="text-xl font-bold mb-2">Configuration requise</h2>
-                    <p className="text-text-secondary mb-6 text-sm">Veuillez entrer votre clé API Alldebrid dans les paramètres pour commencer.</p>
-                    <button onClick={() => navigate('/settings')} className="btn-primary w-full py-3.5">
-                        Aller aux paramètres
-                    </button>
+                    <h2 className="text-xl font-bold mb-2 text-white">
+                        {error === "Clé API manquante" ? "Configuration requise" : "Erreur de chargement"}
+                    </h2>
+                    <p className="text-text-secondary mb-6 text-sm">
+                        {error === "Clé API manquante"
+                            ? "Veuillez entrer votre clé API Alldebrid dans les paramètres pour commencer."
+                            : `Impossible de charger votre bibliothèque Alldebrid (${error}). Vérifiez votre clé API dans les paramètres ou réessayez.`}
+                    </p>
+                    <div className="flex gap-3">
+                        <button onClick={() => navigate('/settings')} className="btn-secondary flex-1 py-3 text-xs font-bold">
+                            Paramètres
+                        </button>
+                        <button onClick={() => fetchLibrary(false)} className="btn-primary flex-1 py-3 text-xs font-bold">
+                            Réessayer
+                        </button>
+                    </div>
                 </div>
             </div>
         );

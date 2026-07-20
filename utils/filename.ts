@@ -51,32 +51,37 @@ export const parseMagnetName = (filename: string): ParsedMedia => {
     let episode: number | undefined = undefined;
     let isSeries = false;
 
-    // Format S01E01 / s01e01
     const sxeMatch = cleanName.match(/s(\d{1,2})e(\d{1,2})/i);
+    const xMatch = cleanName.match(/(\d{1,2})x(\d{1,2})/i);
+
     if (sxeMatch) {
         season = parseInt(sxeMatch[1], 10);
         episode = parseInt(sxeMatch[2], 10);
         isSeries = true;
+    } else if (xMatch) {
+        season = parseInt(xMatch[1], 10);
+        episode = parseInt(xMatch[2], 10);
+        isSeries = true;
     } else {
-        // Format 1x02
-        const xMatch = cleanName.match(/(\d{1,2})x(\d{1,2})/i);
-        if (xMatch) {
-            season = parseInt(xMatch[1], 10);
-            episode = parseInt(xMatch[2], 10);
+        const seasonMatch = cleanName.match(/\b(?:season|saison)\s*(\d{1,2})\b/i);
+        const epMatch = cleanName.match(/\b(?:episode|ep|ep\.)\s*(\d{1,2})\b/i);
+        const sMatch = cleanName.match(/(?:^|[\s._\-\[\(])s(\d{2})(?:$|[\s._\-\]\)])/i);
+        const eMatch = cleanName.match(/(?:^|[\s._\-\[\(])e(\d{2})(?:$|[\s._\-\]\)])/i);
+
+        if (seasonMatch) {
+            season = parseInt(seasonMatch[1], 10);
             isSeries = true;
-        } else {
-            // Format Season 1 ou Saison 1
-            const seasonMatch = cleanName.match(/(?:\bseason\b|\bsaison\b|(?:^|[\s._\-\[\(])s)\s*(\d{1,2})(?:$|[\s._\-\]\)])/i);
-            if (seasonMatch) {
-                season = parseInt(seasonMatch[1], 10);
-                isSeries = true;
-            }
-            // Format Episode 1
-            const epMatch = cleanName.match(/(?:\bepisode\b|\bep\b|(?:^|[\s._\-\[\(])e)\s*(\d{1,2})(?:$|[\s._\-\]\)])/i);
-            if (epMatch) {
-                episode = parseInt(epMatch[1], 10);
-                isSeries = true;
-            }
+        } else if (sMatch) {
+            season = parseInt(sMatch[1], 10);
+            isSeries = true;
+        }
+
+        if (epMatch) {
+            episode = parseInt(epMatch[1], 10);
+            isSeries = true;
+        } else if (eMatch) {
+            episode = parseInt(eMatch[1], 10);
+            isSeries = true;
         }
     }
 
