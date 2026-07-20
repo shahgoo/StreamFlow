@@ -36,6 +36,7 @@ export const Library: React.FC = () => {
     const [continueWatching, setContinueWatching] = useState<WatchProgress[]>([]);
     const [loading, setLoading] = useState(true);
     const [metadataLoading, setMetadataLoading] = useState(false);
+    const [isRefreshing, setIsRefreshing] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [activeTab, setActiveTab] = useState<FilterType>(() => (sessionStorage.getItem('sf_activeTab') as FilterType) || 'movie');
@@ -83,19 +84,21 @@ export const Library: React.FC = () => {
 
     // Cache de la liste enrichie complète (affiches + métadonnées)
     const ENRICHED_CACHE_KEY = 'sf_enriched_magnets';
+    const CACHE_TTL = 86400000; // 24 heures en millisecondes
 
-    const loadEnrichedCache = (): EnrichedMagnet[] | null => {
+    const loadEnrichedCache = (allowStale = false): { magnets: EnrichedMagnet[] | null; isFresh: boolean } => {
         try {
             const raw = localStorage.getItem(ENRICHED_CACHE_KEY);
-            if (!raw) return null;
+            if (!raw) return { magnets: null, isFresh: false };
             const data = JSON.parse(raw);
-            // Vérifier la fraîcheur (expire après 1 heure)
-            if (data.timestamp && Date.now() - data.timestamp < 3600000) {
-                return data.magnets;
+            const age = Date.now() - (data.timestamp || 0);
+            const isFresh = age < CACHE_TTL;
+            if (isFresh || allowStale) {
+                return { magnets: data.magnets, isFresh };
             }
-            return null;
+            return { magnets: null, isFresh: false };
         } catch {
-            return null;
+            return { magnets: null, isFresh: false };
         }
     };
 
@@ -129,7 +132,7 @@ export const Library: React.FC = () => {
         }
     };
 
-    const fetchMagnets = async () => {
+    const fetchMagnets = async (silent = false) => {
         if (!adApiKey) {
             setError("Clé API manquante");
             setLoading(false);
@@ -137,7 +140,8 @@ export const Library: React.FC = () => {
         }
 
         try {
-            setLoading(true);
+            if (!silent) setLoading(true);
+            if (silent) setIsRefreshing(true);
             const response = await AlldebridService.getMagnets(adApiKey);
 
             if (response.status === 'success') {
@@ -213,11 +217,13 @@ export const Library: React.FC = () => {
 
             } else {
                 setError(response.error?.message || "Erreur de chargement d'Alldebrid");
-                setLoading(false);
+                if (!silent) setLoading(false);
             }
         } catch (e) {
             setError("Erreur de connexion réseau");
-            setLoading(false);
+            if (!silent) setLoading(false);
+        } finally {
+            setIsRefreshing(false);
         }
     };
 
@@ -296,15 +302,26 @@ export const Library: React.FC = () => {
     };
 
     useEffect(() => {
-        // Charger le cache enrichi instantanément (affiches immédiates)
-        const cached = loadEnrichedCache();
+        // Stratégie stale-while-revalidate :
+        // 1. Charger le cache enrichi immédiatement (affiches instantanées)
+        const { magnets: cached, isFresh } = loadEnrichedCache(true);
         if (cached && cached.length > 0) {
             setMagnets(cached);
             setLoading(false);
         }
-        // Puis rafraîchir depuis l'API en arrière-plan
-        fetchMagnets();
+        // 2. Si le cache est frais (< 24h), ne PAS rappeler l'API
+        //    Si le cache est périmé ou inexistant, rafraîchir en arrière-plan (silencieusement)
+        if (!isFresh) {
+            fetchMagnets(cached && cached.length > 0);
+        }
     }, [adApiKey, tmdbApiKey]);
+
+    // Actualisation manuelle (bouton)
+    const handleManualRefresh = () => {
+        // Invalider le cache et forcer un rafraîchissement
+        localStorage.removeItem(ENRICHED_CACHE_KEY);
+        fetchMagnets(magnets.length > 0);
+    };
 
     useEffect(() => {
         loadContinueWatching();
@@ -517,6 +534,16 @@ export const Library: React.FC = () => {
                             onChange={(e) => setSearchQuery(e.target.value)}
                         />
                     </div>
+
+                    {/* Bouton Actualiser */}
+                    <button
+                        onClick={handleManualRefresh}
+                        disabled={isRefreshing}
+                        className="flex items-center justify-center h-9 w-9 rounded-xl bg-brand-800/60 border border-white/5 text-text-secondary hover:text-white hover:bg-brand-700 transition-all disabled:opacity-50"
+                        title="Actualiser la bibliothèque"
+                    >
+                        <Icons.RefreshCw size={15} className={isRefreshing ? 'animate-spin' : ''} />
+                    </button>
                 </div>
             </div>
 
