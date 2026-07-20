@@ -167,8 +167,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     const syncWithFirebase = async () => {
-        setFirebaseConfigured(isFirebaseConfigured());
-        if (isFirebaseConfigured()) {
+        FirebaseService.reinit({
+            apiKey: localStorage.getItem('fb_apikey') || '',
+            authDomain: localStorage.getItem('fb_authdomain') || '',
+            projectId: localStorage.getItem('fb_projectid') || '',
+            storageBucket: localStorage.getItem('fb_storagebucket') || '',
+            messagingSenderId: localStorage.getItem('fb_messagingid') || '',
+            appId: localStorage.getItem('fb_appid') || ''
+        });
+        const configured = isFirebaseConfigured();
+        setFirebaseConfigured(configured);
+        if (configured) {
             const user = await FirebaseService.loginAnonymously();
             if (user) {
                 setFirebaseUser(user);

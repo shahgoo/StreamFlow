@@ -194,11 +194,16 @@ export const Library: React.FC = () => {
         if (!silent) setLoading(true);
 
         try {
-            // Récupérer simultanément Magnets et Liens débridés enregistrés
-            const [magnetsRes, savedLinksRes] = await Promise.all([
-                AlldebridService.getMagnets(adApiKey),
-                AlldebridService.getSavedLinks(adApiKey)
-            ]);
+            // 1. Récupérer les magnets principaux Alldebrid (indispensable)
+            const magnetsRes = await AlldebridService.getMagnets(adApiKey);
+
+            // 2. Tenter de récupérer les liens débridés enregistrés (optionnel sans bloquer)
+            let savedLinksRes: any = null;
+            try {
+                savedLinksRes = await AlldebridService.getSavedLinks(adApiKey);
+            } catch (e) {
+                console.warn("Could not fetch saved links", e);
+            }
 
             if (magnetsRes.status === 'success') {
                 let allItems: EnrichedMagnet[] = magnetsRes.data.magnets.map(m => {
