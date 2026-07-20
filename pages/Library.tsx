@@ -136,7 +136,7 @@ export const Library: React.FC = () => {
         }
 
         const cached = loadEnrichedCache();
-        const isCacheFresh = cached && (Date.now() - cached.timestamp < CACHE_TTL);
+        const isCacheFresh = cached && Array.isArray(cached.items) && cached.items.length > 0 && (Date.now() - cached.timestamp < CACHE_TTL);
 
         if (isCacheFresh) {
             setMagnets(cached.items);

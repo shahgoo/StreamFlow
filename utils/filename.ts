@@ -66,13 +66,13 @@ export const parseMagnetName = (filename: string): ParsedMedia => {
             isSeries = true;
         } else {
             // Format Season 1 ou Saison 1
-            const seasonMatch = cleanName.match(/(?:season|saison|s)\s*(\d{1,2})/i);
+            const seasonMatch = cleanName.match(/(?:\bseason\b|\bsaison\b|(?:^|[\s._\-\[\(])s)\s*(\d{1,2})(?:$|[\s._\-\]\)])/i);
             if (seasonMatch) {
                 season = parseInt(seasonMatch[1], 10);
                 isSeries = true;
             }
             // Format Episode 1
-            const epMatch = cleanName.match(/(?:episode|ep|e)\s*(\d{1,2})/i);
+            const epMatch = cleanName.match(/(?:\bepisode\b|\bep\b|(?:^|[\s._\-\[\(])e)\s*(\d{1,2})(?:$|[\s._\-\]\)])/i);
             if (epMatch) {
                 episode = parseInt(epMatch[1], 10);
                 isSeries = true;
