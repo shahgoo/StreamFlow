@@ -77,28 +77,84 @@ export const Details: React.FC = () => {
         }
     }, [magnet]);
 
-    // Charger les détails riches TMDB
+    // Charger les détails riches TMDB (avec téléchargement prioritaire si non encore présent)
     useEffect(() => {
         const fetchRichDetails = async () => {
-            if (!magnet || !magnet.tmdbData || !tmdbApiKey) return;
+            if (!magnet || !tmdbApiKey) return;
             
             try {
-                let details: TMDBResult | null = null;
                 const isTv = magnet.mediaType === 'tv' || !!magnet.groupedMagnets;
-                
-                if (isTv) {
-                    details = await TMDBService.getTVDetails(tmdbApiKey, magnet.tmdbData.id);
-                } else {
-                    details = await TMDBService.getMovieDetails(tmdbApiKey, magnet.tmdbData.id);
+                let currentTmdb = magnet.tmdbData;
+
+                // 1. Si les métadonnées TMDB n'ont pas encore été téléchargées, forcer la recherche en priorité !
+                if (!currentTmdb) {
+                    const overrides = StorageUtils.getOverrides();
+                    let override = overrides[magnet.id];
+                    if (!override && magnet.groupedMagnets) {
+                        for (const gm of magnet.groupedMagnets) {
+                            if (overrides[gm.id]?.customTmdbData) {
+                                override = overrides[gm.id];
+                                break;
+                            }
+                        }
+                    }
+
+                    if (override?.customTmdbData) {
+                        currentTmdb = override.customTmdbData;
+                        setMagnet(prev => prev ? { ...prev, tmdbData: override.customTmdbData, mediaType: override.type || prev.mediaType } : null);
+                    } else {
+                        const parsed = parseMagnetName(magnet.filename);
+                        const searchTitle = magnet.mediaType === 'tv' ? (magnet.showName || parsed.showName || parsed.title) : parsed.title;
+                        const mediaType = magnet.mediaType || parsed.type;
+                        
+                        let searchResult = await TMDBService.search(tmdbApiKey, searchTitle, mediaType, parsed.year);
+                        if (!searchResult && parsed.year && mediaType === 'movie') {
+                            searchResult = await TMDBService.search(tmdbApiKey, searchTitle, mediaType);
+                        }
+
+                        if (searchResult) {
+                            currentTmdb = searchResult;
+                            setMagnet(prev => prev ? { ...prev, tmdbData: searchResult } : null);
+
+                            // Mettre à jour le cache local pour la bibliothèque
+                            try {
+                                const cache = JSON.parse(localStorage.getItem('tmdb_cache') || '{}');
+                                const cacheKey = `${mediaType}_${searchTitle}_${parsed.year || ''}`.replace(/\s/g, '').toLowerCase();
+                                cache[cacheKey] = searchResult;
+                                localStorage.setItem('tmdb_cache', JSON.stringify(cache));
+                            } catch (e) {}
+                        }
+                    }
                 }
-                
-                if (details) {
-                    setRichDetails(details);
+
+                // 2. Si on a des métadonnées TMDB, charger les détails enrichis (casting, saisons, saga...)
+                if (currentTmdb?.id) {
+                    let details: TMDBResult | null = null;
+                    if (isTv) {
+                        details = await TMDBService.getTVDetails(tmdbApiKey, currentTmdb.id);
+                    } else {
+                        details = await TMDBService.getMovieDetails(tmdbApiKey, currentTmdb.id);
+                    }
+                    
+                    if (details) {
+                        setRichDetails(details);
+
+                        // Mettre à jour le cache local avec les détails enrichis
+                        try {
+                            const parsed = parseMagnetName(magnet.filename);
+                            const searchTitle = magnet.mediaType === 'tv' ? (magnet.showName || parsed.showName || parsed.title) : parsed.title;
+                            const mediaType = magnet.mediaType || parsed.type;
+                            const cache = JSON.parse(localStorage.getItem('tmdb_cache') || '{}');
+                            const cacheKey = `${mediaType}_${searchTitle}_${parsed.year || ''}`.replace(/\s/g, '').toLowerCase();
+                            cache[cacheKey] = { ...(cache[cacheKey] || {}), ...details };
+                            localStorage.setItem('tmdb_cache', JSON.stringify(cache));
+                        } catch (e) {}
+                    }
+                    
+                    // Charger les films/séries similaires
+                    const similar = await TMDBService.getSimilar(tmdbApiKey, currentTmdb.id, isTv ? 'tv' : 'movie');
+                    setSimilarMedias(similar.slice(0, 6));
                 }
-                
-                // Charger les films/séries similaires
-                const similar = await TMDBService.getSimilar(tmdbApiKey, magnet.tmdbData.id, isTv ? 'tv' : 'movie');
-                setSimilarMedias(similar.slice(0, 6));
             } catch (e) {
                 console.error("Impossible de récupérer les détails enrichis TMDB", e);
             }
@@ -114,16 +170,17 @@ export const Details: React.FC = () => {
     // Charger les détails de la saison active depuis TMDB
     useEffect(() => {
         const fetchSeasonDetails = async () => {
-            if (!magnet?.tmdbData?.id || !tmdbApiKey || activeSeason === null) {
+            const tmdbId = richDetails?.id || magnet?.tmdbData?.id;
+            if (!tmdbId || !tmdbApiKey || activeSeason === null) {
                 setSeasonDetails(null);
                 return;
             }
-            const isTv = magnet.mediaType === 'tv' || !!magnet.groupedMagnets;
+            const isTv = magnet?.mediaType === 'tv' || !!magnet?.groupedMagnets;
             if (!isTv) return;
 
             setSeasonLoading(true);
             try {
-                const details = await TMDBService.getSeasonDetails(tmdbApiKey, magnet.tmdbData.id, activeSeason);
+                const details = await TMDBService.getSeasonDetails(tmdbApiKey, tmdbId, activeSeason);
                 setSeasonDetails(details);
             } catch (e) {
                 console.error('Erreur chargement saison TMDB', e);
@@ -133,7 +190,7 @@ export const Details: React.FC = () => {
             }
         };
         fetchSeasonDetails();
-    }, [magnet?.tmdbData?.id, tmdbApiKey, activeSeason]);
+    }, [magnet?.tmdbData?.id, richDetails?.id, tmdbApiKey, activeSeason]);
 
     // Charger la liste des fichiers vidéo du magnet ou des magnets du groupe
     useEffect(() => {
@@ -285,7 +342,7 @@ export const Details: React.FC = () => {
                     state: { 
                         streamUrl: response.data.link, 
                         filename: fileObj.filename,
-                        tmdbData: magnet.tmdbData,
+                        tmdbData: richDetails || magnet.tmdbData,
                         magnetId: fileObj.magnetId,
                         fileIndex: fileObj.fileIndex,
                         initialTime: progress?.currentTime || 0
@@ -335,8 +392,8 @@ export const Details: React.FC = () => {
     };
 
     const parsed = parseMagnetName(magnet.filename);
-    const posterUrl = TMDBService.getImageUrl(magnet.tmdbData?.backdrop_path || magnet.tmdbData?.poster_path, 'w1280');
     const details = richDetails || magnet.tmdbData;
+    const posterUrl = TMDBService.getImageUrl(details?.backdrop_path || details?.poster_path, 'w1280');
     const title = details?.title || details?.name || magnet.showName || parsed.title;
     const releaseYear = parsed.year || (details?.release_date || details?.first_air_date)?.substring(0, 4);
 

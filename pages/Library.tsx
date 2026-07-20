@@ -352,7 +352,28 @@ export const Library: React.FC = () => {
         // 1. Charger le cache enrichi immédiatement (affiches instantanées)
         const { magnets: cached, isFresh } = loadEnrichedCache(true);
         if (cached && cached.length > 0) {
-            setMagnets(cached);
+            const cache = loadCache();
+            const overrides = StorageUtils.getOverrides();
+            const updatedCached = cached.map(item => {
+                let override = overrides[item.id];
+                if (!override && item.groupedMagnets) {
+                    for (const gm of item.groupedMagnets) {
+                        if (overrides[gm.id]?.customTmdbData) {
+                            override = overrides[gm.id];
+                            break;
+                        }
+                    }
+                }
+                if (override?.customTmdbData) {
+                    return { ...item, tmdbData: override.customTmdbData, mediaType: override.type || item.mediaType };
+                }
+                const cacheKey = getCacheKey(item);
+                if (cache[cacheKey]) {
+                    return { ...item, tmdbData: cache[cacheKey] };
+                }
+                return item;
+            });
+            setMagnets(updatedCached);
             setLoading(false);
         }
         // 2. Si le cache est frais (< 24h), ne PAS rappeler l'API
