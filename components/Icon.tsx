@@ -21,7 +21,8 @@ import {
   Copy,
   Check,
   Volume2,
-  VolumeX
+  VolumeX,
+  Edit3
 } from 'lucide-react';
 
 export const Icons = {
@@ -46,5 +47,6 @@ export const Icons = {
   Copy,
   Check,
   Volume2,
-  VolumeX
+  VolumeX,
+  Edit3
 };

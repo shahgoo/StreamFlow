@@ -26,5 +26,23 @@ export const StorageUtils = {
         const overrides = StorageUtils.getOverrides();
         delete overrides[magnetId];
         localStorage.setItem(OVERRIDES_KEY, JSON.stringify(overrides));
+    },
+
+    getFileOverride: (magnetId: number, filename: string) => {
+        const override = StorageUtils.getOverride(magnetId);
+        return override?.fileOverrides?.[filename];
+    },
+
+    saveFileOverride: (magnetId: number, filename: string, customTmdbData: any) => {
+        const overrides = StorageUtils.getOverrides();
+        const existing = overrides[magnetId] || { id: magnetId };
+        const fileOverrides = { ...(existing.fileOverrides || {}) };
+        if (customTmdbData) {
+            fileOverrides[filename] = customTmdbData;
+        } else {
+            delete fileOverrides[filename];
+        }
+        overrides[magnetId] = { ...existing, fileOverrides };
+        localStorage.setItem(OVERRIDES_KEY, JSON.stringify(overrides));
     }
 };

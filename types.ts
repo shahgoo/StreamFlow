@@ -68,4 +68,5 @@ export interface MagnetOverride {
     tmdbId?: number;
     customTmdbData?: TMDBResult;
     kidsFriendlyOverride?: boolean;
+    fileOverrides?: Record<string, TMDBResult>;
 }

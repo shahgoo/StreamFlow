@@ -47,6 +47,10 @@ export const Details: React.FC = () => {
     const [kidsOverride, setKidsOverride] = useState<boolean | undefined>(undefined);
     const kidsMode = useMemo(() => localStorage.getItem('kids_mode') === 'true', []);
 
+    // File-level TMDB metadata state for multi-movie collections/sagas
+    const [fileTmdbData, setFileTmdbData] = useState<Record<string, TMDBResult>>({});
+    const [editingFile, setEditingFile] = useState<string | null>(null);
+
     useEffect(() => {
         if (magnet) {
             const override = StorageUtils.getOverride(magnet.id);
@@ -325,6 +329,57 @@ export const Details: React.FC = () => {
             .sort((a, b) => a.filename.localeCompare(b.filename, undefined, { numeric: true, sensitivity: 'base' }));
     }, [magnet, qualityFilter]);
 
+    // Charger les métadonnées TMDB individuelles pour chaque fichier (collections/sagas de films)
+    useEffect(() => {
+        const fetchFileMetadata = async () => {
+            if (!magnet || !tmdbApiKey || filesToShow.length === 0) return;
+
+            const newFileTmdb: Record<string, TMDBResult> = {};
+            const cache = JSON.parse(localStorage.getItem('tmdb_cache') || '{}');
+            let cacheUpdated = false;
+
+            for (const file of filesToShow) {
+                // 1. Check file override
+                const fileOverride = StorageUtils.getFileOverride(magnet.id, file.filename);
+                if (fileOverride) {
+                    newFileTmdb[file.filename] = fileOverride;
+                    continue;
+                }
+
+                // 2. Parse filename
+                const parsed = parseMagnetName(file.filename);
+                const searchTitle = parsed.title;
+                const cacheKey = `movie_${searchTitle}_${parsed.year || ''}`.replace(/\s/g, '').toLowerCase();
+
+                if (cache[cacheKey]) {
+                    newFileTmdb[file.filename] = cache[cacheKey];
+                } else {
+                    try {
+                        let result = await TMDBService.search(tmdbApiKey, searchTitle, 'movie', parsed.year);
+                        if (!result && parsed.year) {
+                            result = await TMDBService.search(tmdbApiKey, searchTitle, 'movie');
+                        }
+                        if (result) {
+                            newFileTmdb[file.filename] = result;
+                            cache[cacheKey] = result;
+                            cacheUpdated = true;
+                        }
+                    } catch (e) {}
+                }
+            }
+
+            if (cacheUpdated) {
+                try {
+                    localStorage.setItem('tmdb_cache', JSON.stringify(cache));
+                } catch (e) {}
+            }
+
+            setFileTmdbData(newFileTmdb);
+        };
+
+        fetchFileMetadata();
+    }, [magnet?.id, filesToShow, tmdbApiKey]);
+
     const handlePlay = async (fileObj: { filename: string, link: string, magnetId: number, fileIndex: number }) => {
         if (!adApiKey) return;
 
@@ -337,12 +392,13 @@ export const Details: React.FC = () => {
                 // Charger la progression existante
                 const progressKey = `${fileObj.magnetId}_${fileObj.fileIndex}`;
                 const progress = historyList[progressKey];
+                const specificTmdb = fileTmdbData[fileObj.filename] || richDetails || magnet.tmdbData;
 
                 navigate('/player', { 
                     state: { 
                         streamUrl: response.data.link, 
                         filename: fileObj.filename,
-                        tmdbData: richDetails || magnet.tmdbData,
+                        tmdbData: specificTmdb,
                         magnetId: fileObj.magnetId,
                         fileIndex: fileObj.fileIndex,
                         initialTime: progress?.currentTime || 0
@@ -371,24 +427,33 @@ export const Details: React.FC = () => {
     };
 
     const handleSaveMetadata = () => {
-        StorageUtils.saveOverride({
-            id: magnet.id,
-            type: editType,
-            tmdbId: selectedTmdb?.id,
-            customTmdbData: selectedTmdb || undefined
-        });
-        
-        // Recharger les données locales
-        if (selectedTmdb) {
-            setMagnet(prev => prev ? {
-                ...prev,
-                mediaType: editType,
-                tmdbData: selectedTmdb
-            } : null);
-            setRichDetails(null);
+        if (!magnet) return;
+
+        if (editingFile) {
+            if (selectedTmdb) {
+                StorageUtils.saveFileOverride(magnet.id, editingFile, selectedTmdb);
+                setFileTmdbData(prev => ({ ...prev, [editingFile]: selectedTmdb }));
+            }
+        } else {
+            StorageUtils.saveOverride({
+                id: magnet.id,
+                type: editType,
+                tmdbId: selectedTmdb?.id,
+                customTmdbData: selectedTmdb || undefined
+            });
+            
+            if (selectedTmdb) {
+                setMagnet(prev => prev ? {
+                    ...prev,
+                    mediaType: editType,
+                    tmdbData: selectedTmdb
+                } : null);
+                setRichDetails(null);
+            }
         }
         
         setIsEditModalOpen(false);
+        setEditingFile(null);
     };
 
     const parsed = parseMagnetName(magnet.filename);
@@ -839,8 +904,10 @@ export const Details: React.FC = () => {
                 <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
                     <div className="bg-brand-800 w-full max-w-lg rounded-2xl shadow-2xl border border-white/10 flex flex-col max-h-[90vh]">
                         <div className="p-6 border-b border-white/10 flex justify-between items-center">
-                            <h3 className="text-xl font-bold text-white">Corriger les infos</h3>
-                            <button onClick={() => setIsEditModalOpen(false)} className="text-gray-400 hover:text-white">
+                            <h3 className="text-xl font-bold text-white truncate max-w-xs sm:max-w-md">
+                                {editingFile ? `Corriger infos : ${parseMagnetName(editingFile).title}` : "Corriger les infos"}
+                            </h3>
+                            <button onClick={() => { setIsEditModalOpen(false); setEditingFile(null); }} className="text-gray-400 hover:text-white">
                                 <Icons.XCircle size={24} />
                             </button>
                         </div>
