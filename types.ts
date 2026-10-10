@@ -1,5 +1,7 @@
 import { TMDBResult } from './services/tmdb';
 
+export type { TMDBResult };
+
 export interface ADResponse<T> {
     status: 'success' | 'error';
     data: T;
@@ -27,6 +29,13 @@ export interface Magnet {
         filename: string;
         link: string;
     }[];
+}
+
+export interface EnrichedMagnet extends Magnet {
+    mediaType: 'movie' | 'tv';
+    tmdbData?: TMDBResult;
+    groupedMagnets?: Magnet[];
+    showName?: string;
 }
 
 export interface MagnetsResponse {
@@ -68,5 +77,6 @@ export interface MagnetOverride {
     tmdbId?: number;
     customTmdbData?: TMDBResult;
     kidsFriendlyOverride?: boolean;
+    kidsOverride?: boolean;
     fileOverrides?: Record<string, TMDBResult>;
 }

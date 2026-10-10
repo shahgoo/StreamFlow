@@ -23,20 +23,39 @@ export const AlldebridService = {
     },
 
     /**
-     * Fetch all magnets from the user's account
+     * Fetch all magnets from the user's account with timeout and auto-retry
      */
     getMagnets: async (apiKey: string): Promise<ADResponse<MagnetsResponse>> => {
+        const doFetch = async () => {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 12000);
+            try {
+                const params = new URLSearchParams({
+                    agent: AGENT,
+                    apikey: apiKey.trim(),
+                });
+                const response = await fetch(`${BASE_URL}/magnet/status?${params.toString()}`, {
+                    signal: controller.signal
+                });
+                clearTimeout(timer);
+                return await response.json();
+            } catch (err) {
+                clearTimeout(timer);
+                throw err;
+            }
+        };
+
         try {
-            const params = new URLSearchParams({
-                agent: AGENT,
-                apikey: apiKey,
-            });
-            const response = await fetch(`${BASE_URL}/magnet/status?${params.toString()}`);
-            const data = await response.json();
-            return data;
+            return await doFetch();
         } catch (error) {
-            console.error("Failed to fetch magnets", error);
-            throw error;
+            console.warn("Premier échec getMagnets, seconde tentative...", error);
+            await new Promise(res => setTimeout(res, 600));
+            try {
+                return await doFetch();
+            } catch (retryError) {
+                console.error("Échec définitif getMagnets", retryError);
+                throw retryError;
+            }
         }
     },
 

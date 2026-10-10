@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Magnet } from '../types';
+import { Magnet, EnrichedMagnet } from '../types';
 import { Icons } from './Icon';
 import { TMDBService } from '../services/tmdb';
 import { parseMagnetName, isVideoFile } from '../utils/filename';
@@ -7,28 +7,49 @@ import { StorageUtils } from '../utils/storage';
 import { SagaCollagePoster } from './SagaCollagePoster';
 
 interface MagnetCardProps {
-    magnet: Magnet;
+    magnet: EnrichedMagnet | Magnet;
     posterPath?: string | null;
-    onClick: (magnet: Magnet) => void;
+    onClick: (magnet: any) => void;
 }
 
-export const MagnetCard: React.FC<MagnetCardProps> = ({ magnet, posterPath, onClick }) => {
-    const parsed = parseMagnetName(magnet.filename);
+// In-memory cache singleton to avoid parsing localStorage inside each card
+let memoryTmdbCache: Record<string, any> | null = null;
+let lastCacheRead = 0;
+
+const getCachedTmdb = (): Record<string, any> => {
+    const now = Date.now();
+    if (!memoryTmdbCache || now - lastCacheRead > 2000) {
+        try {
+            const raw = localStorage.getItem('tmdb_cache');
+            memoryTmdbCache = raw ? JSON.parse(raw) : {};
+        } catch {
+            memoryTmdbCache = {};
+        }
+        lastCacheRead = now;
+    }
+    return memoryTmdbCache || {};
+};
+
+// Deterministic fast color generator
+const stringToColor = (str: string) => {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const c = (hash & 0x00FFFFFF).toString(16).toUpperCase();
+    return '#' + '00000'.substring(0, 6 - c.length) + c;
+};
+
+export const MagnetCardComponent: React.FC<MagnetCardProps> = ({ magnet, posterPath, onClick }) => {
+    const parsed = useMemo(() => parseMagnetName(magnet.filename), [magnet.filename]);
     const displayName = parsed.title;
     const isReady = magnet.statusCode === 4;
     const [isFav, setIsFav] = useState(() => StorageUtils.isFavorite(magnet.id));
     
-    // Gradient de fallback déterministe pour les torrents sans affiche TMDB
-    const stringToColor = (str: string) => {
-        let hash = 0;
-        for (let i = 0; i < str.length; i++) {
-            hash = str.charCodeAt(i) + ((hash << 5) - hash);
-        }
-        const c = (hash & 0x00FFFFFF).toString(16).toUpperCase();
-        return '#' + '00000'.substring(0, 6 - c.length) + c;
-    };
-    
-    const fallbackGradient = `linear-gradient(135deg, ${stringToColor(magnet.filename)}80 0%, #06080F 100%)`;
+    const fallbackGradient = useMemo(() => {
+        return `linear-gradient(135deg, ${stringToColor(magnet.filename)}80 0%, #06080F 100%)`;
+    }, [magnet.filename]);
+
     const posterUrl = TMDBService.getImageUrl(posterPath, 'w500');
 
     // Fichiers vidéo contenus dans le magnet
@@ -36,13 +57,12 @@ export const MagnetCard: React.FC<MagnetCardProps> = ({ magnet, posterPath, onCl
         return (magnet.links || []).filter(l => isVideoFile(l.filename));
     }, [magnet.links]);
 
-    // Récupérer les affiches des vidéos individuelles si pas d'affiche principale (avec try/catch pour éviter tout écran noir)
+    // Récupérer les affiches des vidéos individuelles si pas d'affiche principale
     const collagePosters = useMemo(() => {
         try {
             if (posterUrl || videoFiles.length < 2) return [];
 
-            const cacheStr = localStorage.getItem('tmdb_cache');
-            const cache = cacheStr ? JSON.parse(cacheStr) : {};
+            const cache = getCachedTmdb();
             const posters: string[] = [];
 
             for (const file of videoFiles) {
@@ -87,7 +107,8 @@ export const MagnetCard: React.FC<MagnetCardProps> = ({ magnet, posterPath, onCl
     return (
         <div 
             onClick={() => onClick(magnet)}
-            className="group relative bg-brand-800 rounded-2xl overflow-hidden shadow-lg cursor-pointer transform transition-all duration-300 hover:scale-105 hover:shadow-glow-accent-lg hover:ring-2 hover:ring-brand-accent/70 aspect-[2/3] animate-fade-in"
+            className="group relative bg-brand-800 rounded-2xl overflow-hidden shadow-lg cursor-pointer transform-gpu will-change-transform transition-all duration-300 hover:scale-105 hover:shadow-glow-accent-lg hover:ring-2 hover:ring-brand-accent/70 aspect-[2/3] animate-fade-in"
+            style={{ contentVisibility: 'auto', containIntrinsicSize: '200px 300px' }}
         >
             {/* Affiche de fond, Collage de saga ou dégradé de fallback */}
             {posterUrl ? (
@@ -96,6 +117,7 @@ export const MagnetCard: React.FC<MagnetCardProps> = ({ magnet, posterPath, onCl
                         src={posterUrl} 
                         alt={displayName} 
                         loading="lazy"
+                        decoding="async"
                         className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 opacity-90 group-hover:opacity-100" 
                      />
                      <div className="absolute inset-0 bg-gradient-to-t from-black via-black/35 to-transparent"></div>
@@ -196,3 +218,5 @@ export const MagnetCard: React.FC<MagnetCardProps> = ({ magnet, posterPath, onCl
         </div>
     );
 };
+
+export const MagnetCard = React.memo(MagnetCardComponent);

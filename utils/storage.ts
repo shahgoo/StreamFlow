@@ -123,7 +123,7 @@ export const StorageUtils = {
         const keywords = titleFirst
             .replace(/[^\w\s]/gi, ' ')
             .split(/\s+/)
-            .filter(w => w.length > 2 && !stopWords.has(w));
+            .filter((w: string) => w.length > 2 && !stopWords.has(w));
 
         if (keywords.length === 0) return [];
 
@@ -131,7 +131,7 @@ export const StorageUtils = {
             if (m.id === firstMagnet.id) return false;
             const parsedOther = parseMagnetName(m.filename);
             const titleOther = (m.tmdbData?.title || m.tmdbData?.name || parsedOther.title || m.filename).toLowerCase();
-            return keywords.some(kw => titleOther.includes(kw));
+            return keywords.some((kw: string) => titleOther.includes(kw));
         });
     }
 };

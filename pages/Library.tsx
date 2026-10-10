@@ -344,7 +344,7 @@ export const Library: React.FC = () => {
 
                 // Fallback pour les packs/collections de films : essayer avec le titre du premier fichier vidéo
                 if (!result && item.mediaType === 'movie' && item.links && item.links.length > 0) {
-                    const firstVideo = item.links.find(l => isVideoFile(l.filename));
+                    const firstVideo = item.links.find((l: { filename: string }) => isVideoFile(l.filename));
                     if (firstVideo) {
                         const parsedFile = parseMagnetName(firstVideo.filename);
                         if (parsedFile.title && parsedFile.title.toLowerCase() !== (searchTitle || '').toLowerCase()) {
@@ -374,7 +374,7 @@ export const Library: React.FC = () => {
                     cacheUpdated = true;
                 }
 
-                if (i % 2 === 0 || i === newItems.length - 1) {
+                if ((i > 0 && i % 8 === 0) || i === newItems.length - 1) {
                     setMagnets([...newItems]);
                 }
             }
@@ -413,13 +413,14 @@ export const Library: React.FC = () => {
 
             // 3. Mode Enfants
             if (kidsMode) {
-                const isKidsOverride = m.id ? StorageUtils.getOverride(m.id)?.kidsOverride : undefined;
+                const override = m.id ? StorageUtils.getOverride(m.id) : undefined;
+                const isKidsOverride = override?.kidsFriendlyOverride ?? override?.kidsOverride;
                 if (isKidsOverride === false) return false;
 
                 if (isKidsOverride !== true) {
-                    const genreIds = m.tmdbData?.genre_ids || (m.tmdbData?.genres ? m.tmdbData.genres.map(g => g.id) : []);
-                    const isAnimationOrFamily = genreIds.some(id => [16, 10751, 10762].includes(id));
-                    const isAdultOrAction = genreIds.some(id => [27, 80, 53, 10752, 18, 28].includes(id));
+                    const genreIds: number[] = m.tmdbData?.genre_ids || (m.tmdbData?.genres ? m.tmdbData.genres.map((g: { id: number }) => g.id) : []);
+                    const isAnimationOrFamily = genreIds.some((id: number) => [16, 10751, 10762].includes(id));
+                    const isAdultOrAction = genreIds.some((id: number) => [27, 80, 53, 10752, 18, 28].includes(id));
                     if (!isAnimationOrFamily || isAdultOrAction) return false;
                 }
             }
@@ -433,12 +434,12 @@ export const Library: React.FC = () => {
 
             // 5. Filtrage par Catégorie de genre
             if (!kidsMode && activeCategory !== 'all') {
-                const genreIds = m.tmdbData?.genre_ids || (m.tmdbData?.genres ? m.tmdbData.genres.map(g => g.id) : []);
+                const genreIds: number[] = m.tmdbData?.genre_ids || (m.tmdbData?.genres ? m.tmdbData.genres.map((g: { id: number }) => g.id) : []);
                 let matchesCategory = false;
-                if (activeCategory === 'action') matchesCategory = genreIds.some(id => [28, 12, 10759].includes(id));
-                else if (activeCategory === 'comedy') matchesCategory = genreIds.some(id => [35].includes(id));
-                else if (activeCategory === 'animation') matchesCategory = genreIds.some(id => [16].includes(id));
-                else if (activeCategory === 'kids') matchesCategory = genreIds.some(id => [10751, 10762].includes(id));
+                if (activeCategory === 'action') matchesCategory = genreIds.some((id: number) => [28, 12, 10759].includes(id));
+                else if (activeCategory === 'comedy') matchesCategory = genreIds.some((id: number) => [35].includes(id));
+                else if (activeCategory === 'animation') matchesCategory = genreIds.some((id: number) => [16].includes(id));
+                else if (activeCategory === 'kids') matchesCategory = genreIds.some((id: number) => [10751, 10762].includes(id));
 
                 if (!matchesCategory) return false;
             }

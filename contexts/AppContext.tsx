@@ -23,29 +23,35 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [adApiKey, setAdApiKeyInternal] = useState('');
-    const [tmdbApiKey, setTmdbApiKeyInternal] = useState('');
-    const [savedPin, setSavedPinInternal] = useState('');
-    const [isLocked, setIsLocked] = useState(false);
+    const [adApiKey, setAdApiKeyInternal] = useState<string>(() => {
+        return (localStorage.getItem('ad_apikey') || localStorage.getItem('ad_api_key') || '').trim();
+    });
+    const [tmdbApiKey, setTmdbApiKeyInternal] = useState<string>(() => {
+        return (localStorage.getItem('tmdb_apikey') || localStorage.getItem('tmdb_api_key') || '').trim();
+    });
+    const [savedPin, setSavedPinInternal] = useState<string>(() => {
+        return (localStorage.getItem('settings_pin') || '').trim();
+    });
+    const [isLocked, setIsLocked] = useState<boolean>(() => {
+        return !!localStorage.getItem('settings_pin');
+    });
 
     // Firebase Auth State
     const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
     const [firebaseLoading, setFirebaseLoading] = useState(true);
     const [firebaseConfigured, setFirebaseConfigured] = useState(isFirebaseConfigured());
 
-    // Load initial local config
+    // Sync any legacy storage format on mount once
     useEffect(() => {
-        const storedAd = localStorage.getItem('ad_apikey') || '';
-        const storedTmdb = localStorage.getItem('tmdb_apikey') || '';
-        const storedPin = localStorage.getItem('settings_pin') || '';
-
-        if (storedAd) setAdApiKeyInternal(storedAd);
-        if (storedTmdb) setTmdbApiKeyInternal(storedTmdb);
-        if (storedPin) {
-            setSavedPinInternal(storedPin);
-            setIsLocked(true);
+        if (adApiKey) {
+            localStorage.setItem('ad_apikey', adApiKey);
+            localStorage.setItem('ad_api_key', adApiKey);
         }
-    }, []);
+        if (tmdbApiKey) {
+            localStorage.setItem('tmdb_apikey', tmdbApiKey);
+            localStorage.setItem('tmdb_api_key', tmdbApiKey);
+        }
+    }, [adApiKey, tmdbApiKey]);
 
     // Setup Firebase Auth listener if configured
     useEffect(() => {
@@ -98,25 +104,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, [firebaseConfigured]);
 
     const setAdApiKey = (key: string) => {
-        localStorage.setItem('ad_apikey', key);
-        setAdApiKeyInternal(key);
+        const clean = key.trim();
+        localStorage.setItem('ad_apikey', clean);
+        localStorage.setItem('ad_api_key', clean);
+        setAdApiKeyInternal(clean);
         if (firebaseUser) {
-            FirebaseService.saveDoc('config', 'keys', { adApiKey: key });
+            FirebaseService.saveDoc('config', 'keys', { adApiKey: clean });
         }
     };
 
     const setTmdbApiKey = (key: string) => {
-        localStorage.setItem('tmdb_apikey', key);
-        setTmdbApiKeyInternal(key);
+        const clean = key.trim();
+        localStorage.setItem('tmdb_apikey', clean);
+        localStorage.setItem('tmdb_api_key', clean);
+        setTmdbApiKeyInternal(clean);
         if (firebaseUser) {
-            FirebaseService.saveDoc('config', 'keys', { tmdbApiKey: key });
+            FirebaseService.saveDoc('config', 'keys', { tmdbApiKey: clean });
         }
     };
 
     const setSavedPin = (pin: string) => {
-        if (pin) {
-            localStorage.setItem('settings_pin', pin);
-            setSavedPinInternal(pin);
+        const clean = pin.trim();
+        if (clean) {
+            localStorage.setItem('settings_pin', clean);
+            setSavedPinInternal(clean);
             setIsLocked(true);
         } else {
             localStorage.removeItem('settings_pin');
@@ -124,12 +135,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             setIsLocked(false);
         }
         if (firebaseUser) {
-            FirebaseService.saveDoc('config', 'keys', { savedPin: pin });
+            FirebaseService.saveDoc('config', 'keys', { savedPin: clean });
         }
     };
 
     const logoutAlldebrid = () => {
         localStorage.removeItem('ad_apikey');
+        localStorage.removeItem('ad_api_key');
         setAdApiKeyInternal('');
         if (firebaseUser) {
             FirebaseService.saveDoc('config', 'keys', { adApiKey: '' });
@@ -138,6 +150,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const logoutTmdb = () => {
         localStorage.removeItem('tmdb_apikey');
+        localStorage.removeItem('tmdb_api_key');
         setTmdbApiKeyInternal('');
         if (firebaseUser) {
             FirebaseService.saveDoc('config', 'keys', { tmdbApiKey: '' });
@@ -150,10 +163,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         if (cleanAd) {
             localStorage.setItem('ad_apikey', cleanAd);
+            localStorage.setItem('ad_api_key', cleanAd);
             setAdApiKeyInternal(cleanAd);
         }
         if (cleanTmdb) {
             localStorage.setItem('tmdb_apikey', cleanTmdb);
+            localStorage.setItem('tmdb_api_key', cleanTmdb);
             setTmdbApiKeyInternal(cleanTmdb);
         }
 

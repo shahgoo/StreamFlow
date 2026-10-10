@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Icons } from './Icon';
 import { TMDBService, TMDBResult } from '../services/tmdb';
 import { parseMagnetName } from '../utils/filename';
@@ -9,26 +9,37 @@ interface HeroBannerProps {
     onDetailsClick: (magnet: any) => void;
 }
 
-export const HeroBanner: React.FC<HeroBannerProps> = ({ mediaItems, onPlayClick, onDetailsClick }) => {
-    const [featuredItem, setFeaturedItem] = useState<any | null>(null);
+export const HeroBannerComponent: React.FC<HeroBannerProps> = ({ mediaItems, onPlayClick, onDetailsClick }) => {
+    const [featuredId, setFeaturedId] = useState<number | null>(null);
 
     useEffect(() => {
-        // Filtrer les films/séries qui ont un backdrop TMDB
+        if (mediaItems.length === 0) {
+            setFeaturedId(null);
+            return;
+        }
+
+        // If we already have a selected featured item that still exists in mediaItems, keep it
+        if (featuredId !== null && mediaItems.some(i => i.id === featuredId)) {
+            return;
+        }
+
+        // Filter items with backdrops
         const itemsWithBackdrop = mediaItems.filter(
             (item) => item.tmdbData && item.tmdbData.backdrop_path
         );
 
         if (itemsWithBackdrop.length > 0) {
-            // Sélectionner un film au hasard
-            const randomIdx = Math.floor(Math.random() * itemsWithBackdrop.length);
-            setFeaturedItem(itemsWithBackdrop[randomIdx]);
-        } else if (mediaItems.length > 0) {
-            // Fallback sur le premier item sans backdrop
-            setFeaturedItem(mediaItems[0]);
+            const randomItem = itemsWithBackdrop[Math.floor(Math.random() * itemsWithBackdrop.length)];
+            setFeaturedId(randomItem.id);
         } else {
-            setFeaturedItem(null);
+            setFeaturedId(mediaItems[0].id);
         }
-    }, [mediaItems]);
+    }, [mediaItems, featuredId]);
+
+    const featuredItem = useMemo(() => {
+        if (!featuredId) return null;
+        return mediaItems.find(i => i.id === featuredId) || null;
+    }, [mediaItems, featuredId]);
 
     if (!featuredItem) return null;
 
@@ -39,13 +50,14 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ mediaItems, onPlayClick,
     const backdropUrl = TMDBService.getImageUrl(tmdb.backdrop_path, 'w1280');
 
     return (
-        <div className="relative w-full h-[55vh] md:h-[65vh] rounded-3xl overflow-hidden mb-8 group shadow-2xl border border-white/5 animate-fade-in">
+        <div className="relative w-full h-[55vh] md:h-[65vh] rounded-3xl overflow-hidden mb-8 group shadow-2xl border border-white/5 animate-fade-in transform-gpu">
             {/* Image de fond avec effet de zoom et fondu */}
             {backdropUrl ? (
                 <div className="absolute inset-0">
                     <img 
                         src={backdropUrl} 
                         alt={title} 
+                        decoding="async"
                         className="w-full h-full object-cover opacity-35 group-hover:scale-105 transition-transform duration-[10s] ease-out"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-brand-900 via-brand-900/60 to-transparent"></div>
@@ -106,3 +118,5 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ mediaItems, onPlayClick,
         </div>
     );
 };
+
+export const HeroBanner = React.memo(HeroBannerComponent);

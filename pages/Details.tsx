@@ -8,6 +8,7 @@ import { StorageUtils } from '../utils/storage';
 import { parseMagnetName } from '../utils/filename';
 import { useApp } from '../contexts/AppContext';
 import { WatchHistoryService, WatchProgress } from '../services/watchHistory';
+import { SagaCollagePoster } from '../components/SagaCollagePoster';
 
 // Extended Magnet type to handle the passed state
 interface DetailedMagnet extends Magnet {
